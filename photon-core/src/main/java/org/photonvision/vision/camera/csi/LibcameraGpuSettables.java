@@ -76,8 +76,9 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
             videoModes.put(4, new FPSRatedVideoMode(PixelFormat.kUnknown, 1920, 1080, 15, 20, .53));
             videoModes.put(5, new FPSRatedVideoMode(PixelFormat.kUnknown, 3280 / 2, 2464 / 2, 15, 20, 1));
             videoModes.put(6, new FPSRatedVideoMode(PixelFormat.kUnknown, 3280 / 4, 2464 / 4, 15, 20, 1));
-        } else if (sensorModel == LibCameraJNI.SensorModel.OV9281) {
-            // Taken from https://www.ovt.com/wp-content/uploads/2022/01/OV9281-OV9282-PB-v1.3-WEB.pdf
+        } else if (sensorModel == LibCameraJNI.SensorModel.OV9281
+                || sensorModel == LibCameraJNI.SensorModel.OV9782) {
+            // OV9281 modes; OV9782 is compatible with this mode list.
             videoModes.put(0, new FPSRatedVideoMode(PixelFormat.kUnknown, 640, 400, 120, 240, 1));
             videoModes.put(1, new FPSRatedVideoMode(PixelFormat.kUnknown, 1280, 800, 120, 120, 1));
 
@@ -107,7 +108,8 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
 
         currentVideoMode = (FPSRatedVideoMode) videoModes.get(0);
 
-        if (sensorModel == LibCameraJNI.SensorModel.OV9281) {
+        if (sensorModel == LibCameraJNI.SensorModel.OV9281
+                || sensorModel == LibCameraJNI.SensorModel.OV9782) {
             minExposure = 7;
         } else if (sensorModel == LibCameraJNI.SensorModel.OV5647) {
             minExposure = 560;
@@ -223,9 +225,8 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
                             (m_rotationMode == ImageRotationMode.DEG_180_CCW ? 180 : 0));
             if (r_ptr == 0) {
                 logger.error("Couldn't create a zero copy Pi Camera while switching video modes");
-                if (!LibCameraJNI.destroyCamera(r_ptr)) {
-                    logger.error("Couldn't destroy a zero copy Pi Camera while switching video modes");
-                }
+                currentVideoMode = mode;
+                return;
             }
             logger.debug("Starting libcamera");
             if (!LibCameraJNI.startCamera(r_ptr)) {

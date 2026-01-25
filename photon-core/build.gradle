@@ -66,6 +66,25 @@ dependencies {
     testImplementation group: 'org.junit-pioneer' , name: 'junit-pioneer', version: '2.2.0'
 }
 
+def coreProject = project
+def targetingProject = project(":photon-targeting")
+targetingProject.afterEvaluate {
+    def targetingZipBase = targetingProject.ext.find("zipBaseName")
+    if (targetingZipBase == null) {
+        return
+    }
+    def targetingZipClassifier = wpilibTools.getPlatformMapper().getWpilibClassifier()
+    def targetingZipPath = targetingProject.layout.buildDirectory.file(
+            "outputs/${targetingZipBase}-${targetingZipClassifier}.zip"
+    )
+    coreProject.dependencies {
+        wpilibNatives files(targetingZipPath)
+    }
+    coreProject.tasks.named("processResources") {
+        dependsOn targetingProject.tasks.named("copyAllOutputs")
+    }
+}
+
 task writeCurrentVersion {
     doLast {
         def versionFileIn = file("${rootDir}/shared/PhotonVersion.java.in")

@@ -76,12 +76,22 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
             videoModes.put(4, new FPSRatedVideoMode(PixelFormat.kUnknown, 1920, 1080, 15, 20, .53));
             videoModes.put(5, new FPSRatedVideoMode(PixelFormat.kUnknown, 3280 / 2, 2464 / 2, 15, 20, 1));
             videoModes.put(6, new FPSRatedVideoMode(PixelFormat.kUnknown, 3280 / 4, 2464 / 4, 15, 20, 1));
-        } else if (sensorModel == LibCameraJNI.SensorModel.OV9281
-                || sensorModel == LibCameraJNI.SensorModel.OV9782) {
-            // OV9281 modes; OV9782 is compatible with this mode list.
-            videoModes.put(0, new FPSRatedVideoMode(PixelFormat.kUnknown, 640, 400, 120, 240, 1));
-            videoModes.put(1, new FPSRatedVideoMode(PixelFormat.kUnknown, 1280, 800, 120, 120, 1));
-
+        } else if (sensorModel == LibCameraJNI.SensorModel.OV9281) {
+            // OV9281 (mono) modes.
+            videoModes.put(0, new FPSRatedVideoMode(PixelFormat.kGray, 1280, 800, 120, 120, 1));
+            videoModes.put(1, new FPSRatedVideoMode(PixelFormat.kGray, 1280, 720, 120, 120, 1));
+            videoModes.put(2, new FPSRatedVideoMode(PixelFormat.kGray, 640, 480, 120, 120, 1));
+            videoModes.put(3, new FPSRatedVideoMode(PixelFormat.kGray, 640, 400, 120, 240, 1));
+            videoModes.put(4, new FPSRatedVideoMode(PixelFormat.kGray, 320, 240, 240, 240, 1));
+            videoModes.put(5, new FPSRatedVideoMode(PixelFormat.kGray, 320, 180, 240, 240, 1));
+        } else if (sensorModel == LibCameraJNI.SensorModel.OV9782) {
+            // OV9782 (color + mono) modes.
+            videoModes.put(0, new FPSRatedVideoMode(PixelFormat.kBGR, 1280, 800, 120, 120, 1));
+            videoModes.put(1, new FPSRatedVideoMode(PixelFormat.kBGR, 1280, 720, 120, 120, 1));
+            videoModes.put(2, new FPSRatedVideoMode(PixelFormat.kBGR, 640, 480, 120, 120, 1));
+            videoModes.put(3, new FPSRatedVideoMode(PixelFormat.kBGR, 640, 400, 120, 240, 1));
+            videoModes.put(4, new FPSRatedVideoMode(PixelFormat.kBGR, 320, 240, 240, 240, 1));
+            videoModes.put(5, new FPSRatedVideoMode(PixelFormat.kBGR, 320, 180, 240, 240, 1));
         } else {
             if (sensorModel == LibCameraJNI.SensorModel.IMX477) {
                 LibcameraGpuSource.logger.warn(

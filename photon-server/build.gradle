@@ -40,9 +40,17 @@ node {
     nodeProjectDir = file("${projectDir}/../photon-client")
 }
 
+def docsBuildDir = file("${rootDir}/docs/build/html")
+
 tasks.register('copyClientUIToResources', Copy) {
     from "${projectDir}/../photon-client/dist/"
     into "${projectDir}/src/main/resources/web/"
+}
+
+tasks.register('copyDocsToResources', Copy) {
+    from docsBuildDir
+    into "${projectDir}/src/main/resources/web/docs"
+    onlyIf { docsBuildDir.exists() }
 }
 
 tasks.register('buildClient', PnpmTask) {
@@ -59,6 +67,11 @@ tasks.register('buildAndCopyUI') {
 
 processResources {
     dependsOn copyClientUIToResources
+    dependsOn copyDocsToResources
+}
+
+tasks.named('copyClientUIToResources') {
+    finalizedBy copyDocsToResources
 }
 
 run {

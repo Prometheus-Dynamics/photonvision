@@ -37,7 +37,7 @@ ext {
     openCVYear = "2025"
     openCVversion = "4.10.0-3"
     javalinVersion = "6.7.0"
-    libcameraDriverVersion = "v2026.0.0"
+    libcameraDriverVersion = project.findProperty("libcameraDriverVersion") ?: "v2026.0.0"
     rknnVersion = "v2026.0.1"
     rubikVersion = "v2026.0.1"
     frcYear = "2026"

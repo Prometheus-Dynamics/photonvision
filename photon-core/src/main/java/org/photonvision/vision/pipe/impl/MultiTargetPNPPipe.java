@@ -27,6 +27,7 @@ import org.photonvision.estimation.TargetModel;
 import org.photonvision.estimation.VisionEstimation;
 import org.photonvision.targeting.MultiTargetPNPResult;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.pipe.CVPipe;
 import org.photonvision.vision.target.TrackedTarget;
 
@@ -76,7 +77,9 @@ public class MultiTargetPNPPipe
                         params.cameraCoefficients().distCoeffs.getAsWpilibMat(),
                         TrackedTarget.simpleFromTrackedTargets(targetList),
                         params.atfl(),
-                        params.targetModel());
+                        params.targetModel(),
+                        params.cameraCoefficients().lensmodel
+                                == CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
 
         if (estimatedPose.isPresent()) {
             return Optional.of(new MultiTargetPNPResult(estimatedPose.get(), tagIDsUsed));

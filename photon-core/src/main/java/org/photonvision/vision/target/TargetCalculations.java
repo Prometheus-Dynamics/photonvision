@@ -18,6 +18,8 @@
 package org.photonvision.vision.target;
 
 import org.opencv.calib3d.Calib3d;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.RotatedRect;
@@ -25,6 +27,7 @@ import org.opencv.core.TermCriteria;
 import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.common.util.numbers.DoubleCouple;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.opencv.DualOffsetValues;
 
 public class TargetCalculations {
@@ -54,12 +57,25 @@ public class TargetCalculations {
             MatOfPoint2f temp = new MatOfPoint2f(new Point(targetCenterX, targetCenterY));
             // Tighten up termination criteria
             var termCriteria = new TermCriteria(TermCriteria.COUNT + TermCriteria.EPS, 30, 1e-6);
-            Calib3d.undistortImagePoints(
-                    temp,
-                    temp,
-                    cameraCal.getCameraIntrinsicsMat(),
-                    cameraCal.getDistCoeffsMat(),
-                    termCriteria);
+            if (cameraCal.lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+                Mat identity = Mat.eye(3, 3, CvType.CV_64F);
+                Calib3d.fisheye_undistortPoints(
+                        temp,
+                        temp,
+                        cameraCal.getCameraIntrinsicsMat(),
+                        cameraCal.getDistCoeffsMat(),
+                        identity,
+                        cameraCal.getCameraIntrinsicsMat(),
+                        termCriteria);
+                identity.release();
+            } else {
+                Calib3d.undistortImagePoints(
+                        temp,
+                        temp,
+                        cameraCal.getCameraIntrinsicsMat(),
+                        cameraCal.getDistCoeffsMat(),
+                        termCriteria);
+            }
             float buff[] = new float[2];
             temp.get(0, 0, buff);
             temp.release();

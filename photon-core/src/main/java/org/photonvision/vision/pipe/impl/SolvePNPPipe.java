@@ -25,11 +25,13 @@ import java.util.List;
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDouble;
 import org.opencv.core.MatOfPoint2f;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.pipe.CVPipe;
 import org.photonvision.vision.target.TargetModel;
 import org.photonvision.vision.target.TrackedTarget;
@@ -75,13 +77,35 @@ public class SolvePNPPipe
         var rVec = new Mat();
         var tVec = new Mat();
         try {
+            MatOfDouble distCoeffs = params.cameraCoefficients().getDistCoeffsMat();
+            boolean zeroDistortion = false;
+            if (params.cameraCoefficients().lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+                var undistorted = new MatOfPoint2f();
+                var identity = Mat.eye(3, 3, org.opencv.core.CvType.CV_64F);
+                Calib3d.fisheye_undistortPoints(
+                        imagePoints,
+                        undistorted,
+                        params.cameraCoefficients().getCameraIntrinsicsMat(),
+                        params.cameraCoefficients().getDistCoeffsMat(),
+                        identity,
+                        params.cameraCoefficients().getCameraIntrinsicsMat());
+                identity.release();
+                imagePoints.fromArray(undistorted.toArray());
+                undistorted.release();
+                distCoeffs = new MatOfDouble(0, 0, 0, 0);
+                zeroDistortion = true;
+            }
+
             Calib3d.solvePnP(
                     params.targetModel().getRealWorldTargetCoordinates(),
                     imagePoints,
                     params.cameraCoefficients().getCameraIntrinsicsMat(),
-                    params.cameraCoefficients().getDistCoeffsMat(),
+                    distCoeffs,
                     rVec,
                     tVec);
+            if (zeroDistortion) {
+                distCoeffs.release();
+            }
         } catch (Exception e) {
             logger.error("Exception when attempting solvePnP!", e);
             return;

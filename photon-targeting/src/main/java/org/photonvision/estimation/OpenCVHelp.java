@@ -90,6 +90,16 @@ public final class OpenCVHelp {
         return new Matrix<>(new SimpleMatrix(mat.rows(), mat.cols(), true, data));
     }
 
+    private static Mat toFisheyeDistCoeffs(Mat distCoeffsMat) {
+        Mat out = Mat.zeros(4, 1, CvType.CV_64F);
+        if (distCoeffsMat != null && distCoeffsMat.total() > 0) {
+            double[] data = new double[(int) distCoeffsMat.total()];
+            distCoeffsMat.get(0, 0, data);
+            out.put(0, 0, Arrays.copyOf(data, 4));
+        }
+        return out;
+    }
+
     /**
      * Creates a new {@link MatOfPoint3f} with these 3d translations. The OpenCV tvec is a vector with
      * three elements representing {x, y, z} in the EDN coordinate system.
@@ -362,6 +372,50 @@ public final class OpenCVHelp {
     }
 
     /**
+     * Distort a list of points in pixels using the OPENCV fisheye model.
+     *
+     * @param pointsList the undistorted points
+     * @param cameraMatrix standard OpenCV camera mat
+     * @param distCoeffs standard OpenCV distortion coefficients (first 4 used)
+     * @param useFisheye whether to use the fisheye model
+     * @return the list of distorted points
+     */
+    public static List<Point> distortPoints(
+            List<Point> pointsList, Mat cameraMatrix, Mat distCoeffs, boolean useFisheye) {
+        if (!useFisheye) {
+            return distortPoints(pointsList, cameraMatrix, distCoeffs);
+        }
+        if (pointsList == null || pointsList.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        var cx = cameraMatrix.get(0, 2)[0];
+        var cy = cameraMatrix.get(1, 2)[0];
+        var fx = cameraMatrix.get(0, 0)[0];
+        var fy = cameraMatrix.get(1, 1)[0];
+
+        // Normalize to unit focal length coordinates
+        var normalized = new ArrayList<Point>(pointsList.size());
+        for (Point point : pointsList) {
+            normalized.add(new Point((point.x - cx) / fx, (point.y - cy) / fy));
+        }
+
+        var src = new MatOfPoint2f();
+        var dst = new MatOfPoint2f();
+        src.fromList(normalized);
+        Mat distCoeffsFisheye = toFisheyeDistCoeffs(distCoeffs);
+        Calib3d.fisheye_distortPoints(src, dst, cameraMatrix, distCoeffsFisheye);
+
+        var ret = dst.toList();
+
+        src.release();
+        dst.release();
+        distCoeffsFisheye.release();
+
+        return ret;
+    }
+
+    /**
      * Project object points from the 3d world into the 2d camera image. The camera
      * properties(intrinsics, distortion) determine the results of this projection.
      *
@@ -414,12 +468,38 @@ public final class OpenCVHelp {
      */
     public static Point[] undistortPoints(
             Matrix<N3, N3> cameraMatrix, Matrix<N8, N1> distCoeffs, Point[] points) {
+        return undistortPoints(cameraMatrix, distCoeffs, points, false);
+    }
+
+    /**
+     * Undistort 2d image points using a given camera's intrinsics and distortion.
+     *
+     * @param cameraMatrix The camera intrinsics matrix in standard OpenCV form
+     * @param distCoeffs The camera distortion matrix in standard OpenCV form
+     * @param points The distorted image points
+     * @param useFisheye whether to use the fisheye lens model
+     * @return The undistorted image points
+     */
+    public static Point[] undistortPoints(
+            Matrix<N3, N3> cameraMatrix,
+            Matrix<N8, N1> distCoeffs,
+            Point[] points,
+            boolean useFisheye) {
         var distMat = new MatOfPoint2f(points);
         var undistMat = new MatOfPoint2f();
         var cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
         var distCoeffsMat = matrixToMat(distCoeffs.getStorage());
 
-        Calib3d.undistortImagePoints(distMat, undistMat, cameraMatrixMat, distCoeffsMat);
+        if (useFisheye) {
+            Mat distCoeffsFisheye = toFisheyeDistCoeffs(distCoeffsMat);
+            Mat identity = Mat.eye(3, 3, CvType.CV_64F);
+            Calib3d.fisheye_undistortPoints(
+                    distMat, undistMat, cameraMatrixMat, distCoeffsFisheye, identity, cameraMatrixMat);
+            identity.release();
+            distCoeffsFisheye.release();
+        } else {
+            Calib3d.undistortImagePoints(distMat, undistMat, cameraMatrixMat, distCoeffsMat);
+        }
         var undistPoints = undistMat.toArray();
 
         distMat.release();
@@ -518,6 +598,25 @@ public final class OpenCVHelp {
             Matrix<N8, N1> distCoeffs,
             List<Translation3d> modelTrls,
             Point[] imagePoints) {
+        return solvePNP_SQUARE(cameraMatrix, distCoeffs, modelTrls, imagePoints, false);
+    }
+
+    /**
+     * Fisheye-aware solvePNP for a square target.
+     *
+     * @param cameraMatrix The camera intrinsics matrix in standard OpenCV form
+     * @param distCoeffs The camera distortion matrix in standard OpenCV form
+     * @param modelTrls The translations of the object corners in NWU
+     * @param imagePoints The projection of these 3d object points into the 2d camera image
+     * @param useFisheye whether to use the fisheye lens model
+     * @return The resulting transformation that maps the camera pose to the target pose
+     */
+    public static Optional<PnpResult> solvePNP_SQUARE(
+            Matrix<N3, N3> cameraMatrix,
+            Matrix<N8, N1> distCoeffs,
+            List<Translation3d> modelTrls,
+            Point[] imagePoints,
+            boolean useFisheye) {
         // solvepnp inputs
         MatOfPoint3f objectMat = new MatOfPoint3f();
         MatOfPoint2f imageMat = new MatOfPoint2f();
@@ -532,11 +631,18 @@ public final class OpenCVHelp {
             // IPPE_SQUARE expects our corners in a specific order
             modelTrls = reorderCircular(modelTrls, true, -1);
             imagePoints = reorderCircular(Arrays.asList(imagePoints), true, -1).toArray(Point[]::new);
+            if (useFisheye) {
+                imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
+            }
             // translate to OpenCV classes
             translationToTvec(modelTrls.toArray(new Translation3d[0])).assignTo(objectMat);
             imageMat.fromArray(imagePoints);
             matrixToMat(cameraMatrix.getStorage()).assignTo(cameraMatrixMat);
-            matrixToMat(distCoeffs.getStorage()).assignTo(distCoeffsMat);
+            if (useFisheye) {
+                distCoeffsMat.fromArray(0, 0, 0, 0);
+            } else {
+                matrixToMat(distCoeffs.getStorage()).assignTo(distCoeffsMat);
+            }
 
             float[] errors = new float[2];
             Transform3d best = null;
@@ -626,12 +732,39 @@ public final class OpenCVHelp {
             Matrix<N8, N1> distCoeffs,
             List<Translation3d> objectTrls,
             Point[] imagePoints) {
+        return solvePNP_SQPNP(cameraMatrix, distCoeffs, objectTrls, imagePoints, false);
+    }
+
+    /**
+     * Fisheye-aware solvePNP for multiple points.
+     *
+     * @param cameraMatrix The camera intrinsics matrix in standard OpenCV form
+     * @param distCoeffs The camera distortion matrix in standard OpenCV form
+     * @param objectTrls The translations of the object corners, relative to the field.
+     * @param imagePoints The projection of these 3d object points into the 2d camera image.
+     * @param useFisheye whether to use the fisheye lens model
+     * @return The resulting transformation that maps the camera pose to the target pose.
+     */
+    public static Optional<PnpResult> solvePNP_SQPNP(
+            Matrix<N3, N3> cameraMatrix,
+            Matrix<N8, N1> distCoeffs,
+            List<Translation3d> objectTrls,
+            Point[] imagePoints,
+            boolean useFisheye) {
         try {
             // translate to OpenCV classes
             MatOfPoint3f objectMat = translationToTvec(objectTrls.toArray(new Translation3d[0]));
+            if (useFisheye) {
+                imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
+            }
             MatOfPoint2f imageMat = new MatOfPoint2f(imagePoints);
             Mat cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
-            Mat distCoeffsMat = matrixToMat(distCoeffs.getStorage());
+            Mat distCoeffsMat;
+            if (useFisheye) {
+                distCoeffsMat = new MatOfDouble(0, 0, 0, 0);
+            } else {
+                distCoeffsMat = matrixToMat(distCoeffs.getStorage());
+            }
             var rvecs = new ArrayList<Mat>();
             var tvecs = new ArrayList<Mat>();
             Mat rvec = Mat.zeros(3, 1, CvType.CV_32F);

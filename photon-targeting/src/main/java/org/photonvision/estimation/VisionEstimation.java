@@ -35,9 +35,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.ejml.simple.SimpleMatrix;
-import org.opencv.calib3d.Calib3d;
-import org.opencv.core.MatOfDouble;
-import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.photonvision.jni.ConstrainedSolvepnpJni;
 import org.photonvision.targeting.PhotonTrackedTarget;
@@ -92,6 +89,31 @@ public class VisionEstimation {
             List<PhotonTrackedTarget> visTags,
             AprilTagFieldLayout tagLayout,
             TargetModel tagModel) {
+        return estimateCamPosePNP(cameraMatrix, distCoeffs, visTags, tagLayout, tagModel, false);
+    }
+
+    /**
+     * Performs solvePNP using 3d-2d point correspondences of visible AprilTags to estimate the
+     * field-to-camera transformation. If only one tag is visible, the result may have an alternate
+     * solution.
+     *
+     * <p><b>Note:</b> The returned transformation is from the field origin to the camera pose!
+     *
+     * @param cameraMatrix The camera intrinsics matrix in standard opencv form
+     * @param distCoeffs The camera distortion matrix in standard opencv form
+     * @param visTags The visible tags reported by PV. Non-tag targets are automatically excluded.
+     * @param tagLayout The known tag layout on the field
+     * @param tagModel The model describing the tag's geometry
+     * @param useFisheye whether to use the fisheye lens model
+     * @return The transformation that maps the field origin to the camera pose.
+     */
+    public static Optional<PnpResult> estimateCamPosePNP(
+            Matrix<N3, N3> cameraMatrix,
+            Matrix<N8, N1> distCoeffs,
+            List<PhotonTrackedTarget> visTags,
+            AprilTagFieldLayout tagLayout,
+            TargetModel tagModel,
+            boolean useFisheye) {
         if (tagLayout == null
                 || visTags == null
                 || tagLayout.getTags().isEmpty()
@@ -122,7 +144,8 @@ public class VisionEstimation {
         // single-tag pnp
         if (knownTags.size() == 1) {
             var camToTag =
-                    OpenCVHelp.solvePNP_SQUARE(cameraMatrix, distCoeffs, tagModel.vertices, points);
+                    OpenCVHelp.solvePNP_SQUARE(
+                            cameraMatrix, distCoeffs, tagModel.vertices, points, useFisheye);
             if (!camToTag.isPresent()) return Optional.empty();
             var bestPose = knownTags.get(0).pose.transformBy(camToTag.get().best.inverse());
             var altPose = new Pose3d();
@@ -142,7 +165,8 @@ public class VisionEstimation {
         else {
             var objectTrls = new ArrayList<Translation3d>();
             for (var tag : knownTags) objectTrls.addAll(tagModel.getFieldVertices(tag.pose));
-            var camToOrigin = OpenCVHelp.solvePNP_SQPNP(cameraMatrix, distCoeffs, objectTrls, points);
+            var camToOrigin =
+                    OpenCVHelp.solvePNP_SQPNP(cameraMatrix, distCoeffs, objectTrls, points, useFisheye);
             if (camToOrigin.isEmpty()) return Optional.empty();
             return Optional.of(
                     new PnpResult(
@@ -189,6 +213,36 @@ public class VisionEstimation {
             boolean headingFree,
             Rotation2d gyroθ,
             double gyroErrorScaleFac) {
+        return estimateRobotPoseConstrainedSolvepnp(
+                cameraMatrix,
+                distCoeffs,
+                visTags,
+                robot2camera,
+                robotPoseSeed,
+                tagLayout,
+                tagModel,
+                headingFree,
+                gyroθ,
+                gyroErrorScaleFac,
+                false);
+    }
+
+    /**
+     * Performs constrained solvePNP using 3d-2d point correspondences of visible AprilTags to
+     * estimate the field-to-camera transformation, with optional fisheye undistortion.
+     */
+    public static Optional<PnpResult> estimateRobotPoseConstrainedSolvepnp(
+            Matrix<N3, N3> cameraMatrix,
+            Matrix<N8, N1> distCoeffs,
+            List<PhotonTrackedTarget> visTags,
+            Transform3d robot2camera,
+            Pose3d robotPoseSeed,
+            AprilTagFieldLayout tagLayout,
+            TargetModel tagModel,
+            boolean headingFree,
+            Rotation2d gyroθ,
+            double gyroErrorScaleFac,
+            boolean useFisheye) {
         if (tagLayout == null
                 || visTags == null
                 || tagLayout.getTags().isEmpty()
@@ -217,21 +271,7 @@ public class VisionEstimation {
         Point[] points = OpenCVHelp.cornersToPoints(corners);
 
         // Undistort
-        {
-            MatOfPoint2f temp = new MatOfPoint2f();
-            MatOfDouble cameraMatrixMat = new MatOfDouble();
-            MatOfDouble distCoeffsMat = new MatOfDouble();
-            OpenCVHelp.matrixToMat(cameraMatrix.getStorage()).assignTo(cameraMatrixMat);
-            OpenCVHelp.matrixToMat(distCoeffs.getStorage()).assignTo(distCoeffsMat);
-
-            temp.fromArray(points);
-            Calib3d.undistortImagePoints(temp, temp, cameraMatrixMat, distCoeffsMat);
-            points = temp.toArray();
-
-            temp.release();
-            cameraMatrixMat.release();
-            distCoeffsMat.release();
-        }
+        points = OpenCVHelp.undistortPoints(cameraMatrix, distCoeffs, points, useFisheye);
 
         // Rotate from wpilib to opencv camera CS
         var robot2cameraBase =

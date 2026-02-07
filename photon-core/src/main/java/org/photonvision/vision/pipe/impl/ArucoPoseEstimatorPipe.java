@@ -27,11 +27,13 @@ import java.util.List;
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDouble;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point3;
 import org.photonvision.vision.aruco.ArucoDetectionResult;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.opencv.Releasable;
 import org.photonvision.vision.pipe.CVPipe;
 
@@ -80,6 +82,26 @@ public class ArucoPoseEstimatorPipe
         imagePoints.put(3, 0, new float[] {(float) xCorn[2], (float) yCorn[2]});
 
         float[] reprojErrors = new float[2];
+        MatOfDouble distCoeffs = params.calibration().getDistCoeffsMat();
+        boolean zeroDistortion = false;
+        if (params.calibration().lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+            var undistorted = new MatOfPoint2f();
+            var identity = Mat.eye(3, 3, CvType.CV_64F);
+            Calib3d.fisheye_undistortPoints(
+                    imagePoints,
+                    undistorted,
+                    params.calibration().getCameraIntrinsicsMat(),
+                    params.calibration().getDistCoeffsMat(),
+                    identity,
+                    params.calibration().getCameraIntrinsicsMat());
+            identity.release();
+
+            imagePoints.fromArray(undistorted.toArray());
+            undistorted.release();
+
+            distCoeffs = new MatOfDouble(0, 0, 0, 0);
+            zeroDistortion = true;
+        }
         // very rarely the solvepnp solver returns NaN results, so we retry with slight noise added
         for (int i = 0; i < kNaNRetries + 1; i++) {
             // SolvePnP with SOLVEPNP_IPPE_SQUARE solver
@@ -87,7 +109,7 @@ public class ArucoPoseEstimatorPipe
                     objectPoints,
                     imagePoints,
                     params.calibration().getCameraIntrinsicsMat(),
-                    params.calibration().getDistCoeffsMat(),
+                    distCoeffs,
                     rvecs,
                     tvecs,
                     false,
@@ -108,6 +130,9 @@ public class ArucoPoseEstimatorPipe
         }
 
         // create AprilTagPoseEstimate with results
+        if (zeroDistortion) {
+            distCoeffs.release();
+        }
         if (tvecs.isEmpty())
             return new AprilTagPoseEstimate(new Transform3d(), new Transform3d(), 0, 0);
         return new AprilTagPoseEstimate(

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import type {
   CalibrationTagFamilies,
   CalibrationBoardTypes,
+  CalibrationLensModels,
   CameraCalibrationResult,
   UiCameraConfiguration,
   CameraSettingsChangeRequest,
@@ -378,6 +379,7 @@ export const useCameraSettingsStore = defineStore("cameraSettings", {
         boardType: CalibrationBoardTypes;
         useOldPattern: boolean;
         tagFamily: CalibrationTagFamilies;
+        lensModel: CalibrationLensModels;
       },
       cameraUniqueName: string = useStateStore().currentCameraUniqueName
     ) {

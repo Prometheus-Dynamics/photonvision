@@ -19,6 +19,7 @@ package org.photonvision.vision.pipeline;
 
 import edu.wpi.first.math.util.Units;
 import org.opencv.core.Size;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.frame.FrameDivisor;
 
 public class Calibration3dPipelineSettings extends AdvancedPipelineSettings {
@@ -33,6 +34,7 @@ public class Calibration3dPipelineSettings extends AdvancedPipelineSettings {
     public boolean useMrCal = true;
     public boolean useOldPattern = false;
     public boolean drawAllSnapshots;
+    public CameraLensModel lensModel = CameraLensModel.LENSMODEL_OPENCV;
 
     public Calibration3dPipelineSettings() {
         super();

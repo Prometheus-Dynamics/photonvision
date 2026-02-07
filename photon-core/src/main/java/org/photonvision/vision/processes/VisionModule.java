@@ -43,6 +43,7 @@ import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.SerializationUtils;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.CameraType;
 import org.photonvision.vision.camera.QuirkyCamera;
@@ -391,6 +392,7 @@ public class VisionModule {
         settings.resolution = resolution;
         settings.useOldPattern = data.useOldPattern;
         settings.tagFamily = data.tagFamily;
+        settings.lensModel = data.lensModel != null ? data.lensModel : CameraLensModel.LENSMODEL_OPENCV;
 
         // Disable gain if not applicable
         if (!cameraQuirks.hasQuirk(CameraQuirk.Gain)) {

@@ -397,7 +397,7 @@ export const PlaceholderCameraSettings: UiCameraConfiguration = reactive({
         height: 10
       },
       calobjectSpacing: 0.0254,
-      lensModel: "opencv8",
+      lensModel: "LENSMODEL_OPENCV",
       numSnapshots: 1,
       meanErrors: [123.45],
       numMissing: [0],
@@ -460,6 +460,11 @@ export enum CalibrationTagFamilies {
   Dict_5X5_1000 = 1,
   Dict_6X6_1000 = 2,
   Dict_7X7_1000 = 3
+}
+
+export enum CalibrationLensModels {
+  OpenCV = "LENSMODEL_OPENCV",
+  OpenCVFisheye = "LENSMODEL_OPENCV_FISHEYE"
 }
 
 export enum RobotOffsetType {

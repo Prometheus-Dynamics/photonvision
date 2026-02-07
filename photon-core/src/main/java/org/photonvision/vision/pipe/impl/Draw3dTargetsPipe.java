@@ -29,6 +29,7 @@ import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.ColorHelper;
 import org.photonvision.estimation.OpenCVHelp;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.frame.FrameDivisor;
 import org.photonvision.vision.pipe.MutatingPipe;
 import org.photonvision.vision.target.TargetModel;
@@ -46,6 +47,9 @@ public class Draw3dTargetsPipe
                 || params.cameraCalibrationCoefficients.getDistCoeffsMat() == null) {
             return null;
         }
+
+        boolean isFisheye =
+                params.cameraCalibrationCoefficients.lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE;
 
         for (var target : in.getSecond()) {
             // draw convex hull
@@ -81,16 +85,26 @@ public class Draw3dTargetsPipe
                 var bottomModel = params.targetModel.getVisualizationBoxBottom();
                 var topModel = params.targetModel.getVisualizationBoxTop();
 
-                Calib3d.projectPoints(
-                        bottomModel,
-                        target.getCameraRelativeRvec(),
-                        target.getCameraRelativeTvec(),
-                        params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                        params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                        tempMat,
-                        jac);
+                if (isFisheye) {
+                    Calib3d.fisheye_projectPoints(
+                            bottomModel,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat);
+                } else {
+                    Calib3d.projectPoints(
+                            bottomModel,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat,
+                            jac);
+                }
 
-                if (params.redistortPoints) {
+                if (params.redistortPoints && !isFisheye) {
                     // Distort the points, so they match the image they're being overlaid on
                     tempMat.fromList(
                             OpenCVHelp.distortPoints(
@@ -101,16 +115,26 @@ public class Draw3dTargetsPipe
 
                 var bottomPoints = tempMat.toList();
 
-                Calib3d.projectPoints(
-                        topModel,
-                        target.getCameraRelativeRvec(),
-                        target.getCameraRelativeTvec(),
-                        params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                        params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                        tempMat,
-                        jac);
+                if (isFisheye) {
+                    Calib3d.fisheye_projectPoints(
+                            topModel,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat);
+                } else {
+                    Calib3d.projectPoints(
+                            topModel,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat,
+                            jac);
+                }
 
-                if (params.redistortPoints) {
+                if (params.redistortPoints && !isFisheye) {
                     // Distort the points, so they match the image they're being overlaid on
                     tempMat.fromList(
                             OpenCVHelp.distortPoints(
@@ -153,14 +177,24 @@ public class Draw3dTargetsPipe
                 // converts points in the target's coordinate system to the camera's. This means applying
                 // the transformation to the target point (0,0,0) for example would give the target's center
                 // relative to the camera.
-                Calib3d.projectPoints(
-                        pointMat,
-                        target.getCameraRelativeRvec(),
-                        target.getCameraRelativeTvec(),
-                        params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                        params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                        tempMat,
-                        jac);
+                if (isFisheye) {
+                    Calib3d.fisheye_projectPoints(
+                            pointMat,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat);
+                } else {
+                    Calib3d.projectPoints(
+                            pointMat,
+                            target.getCameraRelativeRvec(),
+                            target.getCameraRelativeTvec(),
+                            params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
+                            tempMat,
+                            jac);
+                }
                 var axisPoints = tempMat.toList();
                 dividePointList(axisPoints);
 

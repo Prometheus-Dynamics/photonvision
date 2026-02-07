@@ -111,10 +111,14 @@ public class CameraCalibrationCoefficients implements Releasable {
         double fx = getCameraIntrinsicsMat().get(0, 0)[0];
         double fy = getCameraIntrinsicsMat().get(1, 1)[0];
 
-        // only adjust p1 and p2 the rest are radial distortion coefficients
-
-        double p1 = getDistCoeffsMat().get(0, 2)[0];
-        double p2 = getDistCoeffsMat().get(0, 3)[0];
+        boolean hasTangential = lensmodel == null || lensmodel == CameraLensModel.LENSMODEL_OPENCV;
+        double p1 = 0;
+        double p2 = 0;
+        if (hasTangential && getDistCoeffsMat().total() > 3) {
+            // only adjust p1 and p2 the rest are radial distortion coefficients
+            p1 = getDistCoeffsMat().get(0, 2)[0];
+            p2 = getDistCoeffsMat().get(0, 3)[0];
+        }
 
         Size rotatedImageSize = null;
 
@@ -133,10 +137,12 @@ public class CameraCalibrationCoefficients implements Releasable {
                 // CY
                 rotatedIntrinsics.put(1, 2, cx);
 
-                // P1
-                rotatedDistCoeffs.put(0, 2, p2);
-                // P2
-                rotatedDistCoeffs.put(0, 3, -p1);
+                if (hasTangential) {
+                    // P1
+                    rotatedDistCoeffs.put(0, 2, p2);
+                    // P2
+                    rotatedDistCoeffs.put(0, 3, -p1);
+                }
 
                 // The rotated image size is the same as the unrotated image size, but the width and height
                 // are flipped
@@ -148,10 +154,12 @@ public class CameraCalibrationCoefficients implements Releasable {
                 // CY
                 rotatedIntrinsics.put(1, 2, unrotatedImageSize.height - cy);
 
-                // P1
-                rotatedDistCoeffs.put(0, 2, -p1);
-                // P2
-                rotatedDistCoeffs.put(0, 3, -p2);
+                if (hasTangential) {
+                    // P1
+                    rotatedDistCoeffs.put(0, 2, -p1);
+                    // P2
+                    rotatedDistCoeffs.put(0, 3, -p2);
+                }
 
                 // The rotated image size is the same as the unrotated image size
                 rotatedImageSize = unrotatedImageSize;
@@ -167,10 +175,12 @@ public class CameraCalibrationCoefficients implements Releasable {
                 // CY
                 rotatedIntrinsics.put(1, 2, unrotatedImageSize.width - cx);
 
-                // P1
-                rotatedDistCoeffs.put(0, 2, -p2);
-                // P2
-                rotatedDistCoeffs.put(0, 3, p1);
+                if (hasTangential) {
+                    // P1
+                    rotatedDistCoeffs.put(0, 2, -p2);
+                    // P2
+                    rotatedDistCoeffs.put(0, 3, p1);
+                }
 
                 // The rotated image size is the same as the unrotated image size, but the width and height
                 // are flipped

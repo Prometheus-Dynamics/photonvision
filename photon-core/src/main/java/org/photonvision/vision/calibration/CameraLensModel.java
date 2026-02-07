@@ -30,5 +30,7 @@ public enum CameraLensModel {
     /**
      * Mrcal splined-steriographic lens model. See LENSMODEL_SPLINED_STEREOGRAPHIC in the mrcal docs
      */
-    LENSMODEL_SPLINED_STERIOGRAPHIC
+    LENSMODEL_SPLINED_STERIOGRAPHIC,
+    /** OpenCV fisheye model (k1, k2, k3, k4). See fisheye model in OpenCV calib3d docs */
+    LENSMODEL_OPENCV_FISHEYE
 }

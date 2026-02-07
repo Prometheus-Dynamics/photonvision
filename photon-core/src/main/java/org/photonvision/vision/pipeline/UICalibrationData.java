@@ -18,6 +18,7 @@
 package org.photonvision.vision.pipeline;
 
 import org.opencv.objdetect.Objdetect;
+import org.photonvision.vision.calibration.CameraLensModel;
 
 public class UICalibrationData {
     public int videoModeIndex;
@@ -31,6 +32,7 @@ public class UICalibrationData {
     public double markerSizeIn;
     public boolean useOldPattern;
     public TagFamily tagFamily;
+    public CameraLensModel lensModel = CameraLensModel.LENSMODEL_OPENCV;
 
     public UICalibrationData() {}
 
@@ -45,7 +47,8 @@ public class UICalibrationData {
             int patternHeight,
             BoardType boardType,
             boolean useOldPattern,
-            TagFamily tagFamily) {
+            TagFamily tagFamily,
+            CameraLensModel lensModel) {
         this.count = count;
         this.minCount = minCount;
         this.videoModeIndex = videoModeIndex;
@@ -57,6 +60,9 @@ public class UICalibrationData {
         this.boardType = boardType;
         this.useOldPattern = useOldPattern;
         this.tagFamily = tagFamily;
+        if (lensModel != null) {
+            this.lensModel = lensModel;
+        }
     }
 
     public enum BoardType {
@@ -108,6 +114,8 @@ public class UICalibrationData {
                 + tagFamily
                 + ", useOldPattern="
                 + useOldPattern
+                + ", lensModel="
+                + lensModel
                 + '}';
     }
 }

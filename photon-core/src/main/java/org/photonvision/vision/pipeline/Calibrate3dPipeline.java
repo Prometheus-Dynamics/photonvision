@@ -95,7 +95,11 @@ public class Calibrate3dPipeline
 
         calibrate3dPipe.setParams(
                 new Calibrate3dPipe.CalibratePipeParams(
-                        settings.boardHeight, settings.boardWidth, settings.gridSize, settings.useMrCal));
+                        settings.boardHeight,
+                        settings.boardWidth,
+                        settings.gridSize,
+                        settings.useMrCal,
+                        settings.lensModel));
     }
 
     @Override
@@ -224,7 +228,8 @@ public class Calibrate3dPipeline
                                 settings.boardHeight,
                                 settings.boardType,
                                 settings.useOldPattern,
-                                settings.tagFamily));
+                                settings.tagFamily,
+                                settings.lensModel));
 
         DataChangeService.getInstance()
                 .publishEvent(OutgoingUIEvent.wrappedOf("calibrationData", state));

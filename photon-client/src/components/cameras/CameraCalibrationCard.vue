@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
 import { useCameraSettingsStore } from "@/stores/settings/CameraSettingsStore";
-import { CalibrationBoardTypes, CalibrationTagFamilies, type VideoFormat } from "@/types/SettingTypes";
+import {
+  CalibrationBoardTypes,
+  CalibrationTagFamilies,
+  CalibrationLensModels,
+  type VideoFormat
+} from "@/types/SettingTypes";
 import MonoLogo from "@/assets/images/logoMono.png";
 import CharucoImage from "@/assets/images/ChArUco_Marker8x8.png";
 import PvSlider from "@/components/common/pv-slider.vue";
@@ -100,6 +105,11 @@ const patternHeight = ref(8);
 const boardType = ref<CalibrationBoardTypes>(CalibrationBoardTypes.Charuco);
 const useOldPattern = ref(false);
 const tagFamily = ref<CalibrationTagFamilies>(CalibrationTagFamilies.Dict_4X4_1000);
+const lensModel = ref<CalibrationLensModels>(CalibrationLensModels.OpenCV);
+const lensModelItems = [
+  { name: "Pinhole (OpenCV)", value: CalibrationLensModels.OpenCV },
+  { name: "Fisheye (OpenCV)", value: CalibrationLensModels.OpenCVFisheye }
+];
 const requestedVideoFormatIndex = ref(0);
 
 // Emperical testing - with stack size limit of 1MB, we can handle at -least- 700k points
@@ -187,7 +197,8 @@ const startCalibration = () => {
     patternWidth: patternWidth.value,
     boardType: boardType.value,
     useOldPattern: useOldPattern.value,
-    tagFamily: tagFamily.value
+    tagFamily: tagFamily.value,
+    lensModel: lensModel.value
   });
   // The Start PnP method already handles updating the backend so only a store update is required
   useCameraSettingsStore().currentCameraSettings.currentPipelineIndex = WebsocketPipelineType.Calib3d;
@@ -312,6 +323,14 @@ const setSelectedVideoFormat = (format: VideoFormat) => {
               tooltip="Calibration board pattern to use"
               :select-cols="8"
               :items="['Chessboard', 'ChArUco']"
+              :disabled="isCalibrating"
+            />
+            <pv-select
+              v-model="lensModel"
+              label="Lens Model"
+              tooltip="Lens distortion model to use during calibration and pose estimation"
+              :select-cols="8"
+              :items="lensModelItems"
               :disabled="isCalibrating"
             />
             <v-alert

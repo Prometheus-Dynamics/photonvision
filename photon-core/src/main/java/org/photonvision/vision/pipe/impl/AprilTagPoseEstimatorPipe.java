@@ -22,9 +22,12 @@ import edu.wpi.first.apriltag.AprilTagPoseEstimate;
 import edu.wpi.first.apriltag.AprilTagPoseEstimator;
 import edu.wpi.first.apriltag.AprilTagPoseEstimator.Config;
 import org.opencv.calib3d.Calib3d;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.opencv.Releasable;
 import org.photonvision.vision.pipe.CVPipe;
 
@@ -54,11 +57,23 @@ public class AprilTagPoseEstimatorPipe
         temp.fromArray(corners);
 
         // Probably overwrites what was in temp before. I hope
-        Calib3d.undistortImagePoints(
-                temp,
-                temp,
-                params.calibration().getCameraIntrinsicsMat(),
-                params.calibration().getDistCoeffsMat());
+        if (params.calibration().lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+            Mat identity = Mat.eye(3, 3, CvType.CV_64F);
+            Calib3d.fisheye_undistortPoints(
+                    temp,
+                    temp,
+                    params.calibration().getCameraIntrinsicsMat(),
+                    params.calibration().getDistCoeffsMat(),
+                    identity,
+                    params.calibration().getCameraIntrinsicsMat());
+            identity.release();
+        } else {
+            Calib3d.undistortImagePoints(
+                    temp,
+                    temp,
+                    params.calibration().getCameraIntrinsicsMat(),
+                    params.calibration().getDistCoeffsMat());
+        }
 
         // Save out undistorted corners
         corners = temp.toArray();

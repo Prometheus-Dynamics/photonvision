@@ -94,7 +94,8 @@ public class Calibrate3dPipe
         CameraCalibrationCoefficients ret;
         var start = System.nanoTime();
 
-        if (LoadJNI.hasLoaded(JNITypes.MRCAL) && params.useMrCal) {
+        boolean useFisheye = params.lensModel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE;
+        if (LoadJNI.hasLoaded(JNITypes.MRCAL) && params.useMrCal && !useFisheye) {
             logger.debug("Calibrating with mrcal!");
             ret =
                     calibrateMrcal(
@@ -103,7 +104,11 @@ public class Calibrate3dPipe
                             in.imageProps.verticalFocalLength,
                             in.imageSavePath);
         } else {
-            logger.debug("Calibrating with opencv!");
+            if (useFisheye) {
+                logger.debug("Calibrating with opencv fisheye!");
+            } else {
+                logger.debug("Calibrating with opencv!");
+            }
             ret =
                     calibrateOpenCV(
                             filteredIn,
@@ -155,6 +160,10 @@ public class Calibrate3dPipe
 
             objPoints.add(objPtsOut);
             imgPoints.add(imgPtsOut);
+        }
+
+        if (params.lensModel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+            return calibrateOpenCVFisheye(in, objPoints, imgPoints, fxGuess, fyGuess, imageSavePath);
         }
 
         Mat cameraMatrix = new Mat(3, 3, CvType.CV_64F);
@@ -215,7 +224,8 @@ public class Calibrate3dPipe
                         new double[] {0, 0},
                         objPoints,
                         imgPoints,
-                        imageSavePath);
+                        imageSavePath,
+                        CameraLensModel.LENSMODEL_OPENCV);
 
         cameraMatrix.release();
         distortionCoefficients.release();
@@ -233,6 +243,90 @@ public class Calibrate3dPipe
                 new Size(params.boardWidth, params.boardHeight),
                 params.squareSize,
                 CameraLensModel.LENSMODEL_OPENCV);
+    }
+
+    protected CameraCalibrationCoefficients calibrateOpenCVFisheye(
+            List<FindBoardCornersPipe.FindBoardCornersPipeResult> in,
+            List<MatOfPoint3f> objPoints,
+            List<MatOfPoint2f> imgPoints,
+            double fxGuess,
+            double fyGuess,
+            Path imageSavePath) {
+        Mat cameraMatrix = Mat.eye(3, 3, CvType.CV_64F);
+        Mat distortionCoefficients = Mat.zeros(4, 1, CvType.CV_64F);
+        List<Mat> rvecs = new ArrayList<>();
+        List<Mat> tvecs = new ArrayList<>();
+
+        double cx = (in.get(0).size.width / 2.0) - 0.5;
+        double cy = (in.get(0).size.width / 2.0) - 0.5;
+        cameraMatrix.put(0, 0, fxGuess);
+        cameraMatrix.put(1, 1, fyGuess);
+        cameraMatrix.put(0, 2, cx);
+        cameraMatrix.put(1, 2, cy);
+
+        int flags = Calib3d.fisheye_CALIB_USE_INTRINSIC_GUESS;
+        TermCriteria criteria = new TermCriteria(TermCriteria.COUNT + TermCriteria.EPS, 100, 1e-6);
+
+        try {
+            Calib3d.fisheye_calibrate(
+                    objPoints.stream().map(it -> (Mat) it).toList(),
+                    imgPoints.stream().map(it -> (Mat) it).toList(),
+                    new Size(in.get(0).size.width, in.get(0).size.height),
+                    cameraMatrix,
+                    distortionCoefficients,
+                    rvecs,
+                    tvecs,
+                    flags,
+                    criteria);
+        } catch (Exception e) {
+            logger.error("Fisheye calibration failed!", e);
+            e.printStackTrace();
+            return null;
+        }
+
+        JsonMatOfDouble cameraMatrixMat = JsonMatOfDouble.fromMat(cameraMatrix);
+        JsonMatOfDouble distortionCoefficientsMat = JsonMatOfDouble.fromMat(distortionCoefficients);
+
+        var inliners =
+                objPoints.stream()
+                        .map(
+                                it -> {
+                                    var array = new boolean[it.rows() * it.cols()];
+                                    Arrays.fill(array, true);
+                                    return array;
+                                })
+                        .toList();
+
+        var observations =
+                createObservations(
+                        in,
+                        cameraMatrix,
+                        distortionCoefficients,
+                        rvecs,
+                        tvecs,
+                        inliners,
+                        new double[] {0, 0},
+                        objPoints,
+                        imgPoints,
+                        imageSavePath,
+                        CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
+
+        cameraMatrix.release();
+        distortionCoefficients.release();
+        rvecs.forEach(Mat::release);
+        tvecs.forEach(Mat::release);
+        objPoints.forEach(Mat::release);
+        imgPoints.forEach(Mat::release);
+
+        return new CameraCalibrationCoefficients(
+                in.get(0).size,
+                cameraMatrixMat,
+                distortionCoefficientsMat,
+                new double[0],
+                observations,
+                new Size(params.boardWidth, params.boardHeight),
+                params.squareSize,
+                CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
     }
 
     protected CameraCalibrationCoefficients calibrateMrcal(
@@ -340,7 +434,8 @@ public class Calibrate3dPipe
                         new double[] {result.warp_x, result.warp_y},
                         objPoints,
                         imgPts,
-                        imageSavePath);
+                        imageSavePath,
+                        CameraLensModel.LENSMODEL_OPENCV);
 
         rvecs.forEach(Mat::release);
         tvecs.forEach(Mat::release);
@@ -359,14 +454,15 @@ public class Calibrate3dPipe
     private List<BoardObservation> createObservations(
             List<FindBoardCornersPipe.FindBoardCornersPipeResult> in,
             Mat cameraMatrix_,
-            MatOfDouble distortionCoefficients_,
+            Mat distortionCoefficients_,
             List<Mat> rvecs,
             List<Mat> tvecs,
             List<boolean[]> cornersUsed,
             double[] calobject_warp,
             List<MatOfPoint3f> objPoints,
             List<MatOfPoint2f> imgPts,
-            Path imageSavePath) {
+            Path imageSavePath,
+            CameraLensModel lensModel) {
         // Clear the calibration image folder of any old images before we save the new ones.
         try {
             FileUtils.cleanDirectory(imageSavePath.toFile());
@@ -422,15 +518,25 @@ public class Calibrate3dPipe
             // Project distorted object points to image space
             var img_pts_reprojected = new MatOfPoint2f();
             try {
-                Calib3d.projectPoints(
-                        i_objPtsNative,
-                        rvecs.get(snapshotId),
-                        tvecs.get(snapshotId),
-                        cameraMatrix_,
-                        distortionCoefficients_,
-                        img_pts_reprojected,
-                        jac_temp,
-                        0.0);
+                if (lensModel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
+                    Calib3d.fisheye_projectPoints(
+                            i_objPtsNative,
+                            rvecs.get(snapshotId),
+                            tvecs.get(snapshotId),
+                            cameraMatrix_,
+                            distortionCoefficients_,
+                            img_pts_reprojected);
+                } else {
+                    Calib3d.projectPoints(
+                            i_objPtsNative,
+                            rvecs.get(snapshotId),
+                            tvecs.get(snapshotId),
+                            cameraMatrix_,
+                            (MatOfDouble) distortionCoefficients_,
+                            img_pts_reprojected,
+                            jac_temp,
+                            0.0);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
                 continue;
@@ -521,13 +627,19 @@ public class Calibrate3dPipe
         public double squareSize;
 
         public boolean useMrCal;
+        public CameraLensModel lensModel;
 
         public CalibratePipeParams(
-                int boardHeightSquares, int boardWidthSquares, double squareSize, boolean usemrcal) {
+                int boardHeightSquares,
+                int boardWidthSquares,
+                double squareSize,
+                boolean usemrcal,
+                CameraLensModel lensModel) {
             this.boardHeight = boardHeightSquares - 1;
             this.boardWidth = boardWidthSquares - 1;
             this.squareSize = squareSize;
             this.useMrCal = usemrcal;
+            this.lensModel = lensModel != null ? lensModel : CameraLensModel.LENSMODEL_OPENCV;
         }
     }
 }

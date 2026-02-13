@@ -34,6 +34,15 @@ Accurate camera calibration is required in order to get accurate pose measuremen
 
 Following the ideas above should help in getting an accurate calibration.
 
+## Fisheye Calibration Notes
+
+For very wide-angle cameras, select the **OpenCV Fisheye** lens model before calibrating.
+
+- Do not tune calibration by forcing a target diagonal FOV value. The solved intrinsics/distortion from your snapshots are the source of truth.
+- For fisheye lenses, snapshot coverage near image edges and corners is critical. If your snapshots mostly cover the center, calibration will under-estimate FOV.
+- If calibration fails with messages like "no valid observations were produced," retake snapshots with more board tilt/position diversity and better full-frame coverage.
+- A good sanity check is that solved horizontal/vertical/diagonal FOV are in the expected range from the lens datasheet, not necessarily an exact match.
+
 ## Calibrating using PhotonVision
 
 ### 1. Navigate to the calibration section in the UI.

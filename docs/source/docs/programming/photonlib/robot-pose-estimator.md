@@ -129,6 +129,17 @@ Calling one of the `estimate<strategy>Pose()` methods on your `PhotonPoseEstimat
 
 For Constrained SolvePnP, it's recommended to do the previously mentioned steps, and then feed the pose (if it exists) into `estimateConstrainedSolvepnpPose`, and if the Constrained SolvePnP result is empty, simply feed the seed pose into your drivetrain pose estimator.
 
+### Fisheye Cameras and rio-side SolvePnP
+
+The rio-side strategies (`estimateRioMultiTagPose`, `estimatePnpDistanceTrigSolvePose`, and `estimateConstrainedSolvepnpPose`) can run with either pinhole or fisheye lens math.
+
+In Java, `PhotonPoseEstimator` exposes:
+
+- `setUseFisheye(boolean useFisheye)`
+- `getUseFisheye()`
+
+For fisheye calibrations, leave this enabled. For pinhole calibrations, set it to `false`.
+
 Once you have the `Optional<EstimatedRobotPose>`, you can check to see if there's an actual pose inside, and act accordingly. You should be updating your [drivetrain pose estimator](https://docs.wpilib.org/en/latest/docs/software/advanced-controls/state-space/state-space-pose-estimators.html) with the result from the `PhotonPoseEstimator` every loop using `addVisionMeasurement()`. For Java and C++, the examples pass a method from the drivetrain to a `Vision` object, with the parameter being called `estConsumer`. Python calls the drivetrain directly.
 
 ```{eval-rst}

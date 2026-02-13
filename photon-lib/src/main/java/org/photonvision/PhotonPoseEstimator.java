@@ -127,6 +127,8 @@ public class PhotonPoseEstimator {
     private PoseStrategy primaryStrategy;
     private PoseStrategy multiTagFallbackStrategy = PoseStrategy.LOWEST_AMBIGUITY;
     private Transform3d robotToCamera;
+    // Default to fisheye for Helios-class cameras; callers can disable for pinhole calibration.
+    private boolean useFisheye = true;
 
     private Pose3d lastPose;
     private Pose3d referencePose;
@@ -238,6 +240,25 @@ public class PhotonPoseEstimator {
      */
     public void setTagModel(TargetModel tagModel) {
         this.tagModel = tagModel;
+    }
+
+    /**
+     * Get whether rio-side solvePnP routines should use the fisheye lens model.
+     *
+     * <p>Defaults to {@code true}.
+     */
+    public boolean getUseFisheye() {
+        return useFisheye;
+    }
+
+    /**
+     * Set whether rio-side solvePnP routines should use the fisheye lens model.
+     *
+     * <p>Set this to {@code false} for pinhole camera calibrations.
+     */
+    public void setUseFisheye(boolean useFisheye) {
+        checkUpdate(this.useFisheye, useFisheye);
+        this.useFisheye = useFisheye;
     }
 
     /**
@@ -794,7 +815,8 @@ public class PhotonPoseEstimator {
                         tagModel,
                         headingFree,
                         headingBuffer.getSample(cameraResult.getTimestampSeconds()).get(),
-                        headingScaleFactor);
+                        headingScaleFactor,
+                        useFisheye);
         if (!pnpResult.isPresent()) return Optional.empty();
         var best = Pose3d.kZero.plus(pnpResult.get().best); // field-to-robot
 
@@ -854,7 +876,12 @@ public class PhotonPoseEstimator {
 
         var pnpResult =
                 VisionEstimation.estimateCamPosePNP(
-                        cameraMatrix, distCoeffs, cameraResult.getTargets(), fieldTags, tagModel);
+                        cameraMatrix,
+                        distCoeffs,
+                        cameraResult.getTargets(),
+                        fieldTags,
+                        tagModel,
+                        useFisheye);
         if (!pnpResult.isPresent()) return Optional.empty();
 
         var best =

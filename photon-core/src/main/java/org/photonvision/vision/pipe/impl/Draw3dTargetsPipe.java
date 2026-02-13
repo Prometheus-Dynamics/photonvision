@@ -88,11 +88,11 @@ public class Draw3dTargetsPipe
                 if (isFisheye) {
                     Calib3d.fisheye_projectPoints(
                             bottomModel,
+                            tempMat,
                             target.getCameraRelativeRvec(),
                             target.getCameraRelativeTvec(),
                             params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                            tempMat);
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat());
                 } else {
                     Calib3d.projectPoints(
                             bottomModel,
@@ -118,11 +118,11 @@ public class Draw3dTargetsPipe
                 if (isFisheye) {
                     Calib3d.fisheye_projectPoints(
                             topModel,
+                            tempMat,
                             target.getCameraRelativeRvec(),
                             target.getCameraRelativeTvec(),
                             params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                            tempMat);
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat());
                 } else {
                     Calib3d.projectPoints(
                             topModel,
@@ -180,11 +180,11 @@ public class Draw3dTargetsPipe
                 if (isFisheye) {
                     Calib3d.fisheye_projectPoints(
                             pointMat,
+                            tempMat,
                             target.getCameraRelativeRvec(),
                             target.getCameraRelativeTvec(),
                             params.cameraCalibrationCoefficients.getCameraIntrinsicsMat(),
-                            params.cameraCalibrationCoefficients.getDistCoeffsMat(),
-                            tempMat);
+                            params.cameraCalibrationCoefficients.getDistCoeffsMat());
                 } else {
                     Calib3d.projectPoints(
                             pointMat,

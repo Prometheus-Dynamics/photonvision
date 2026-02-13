@@ -506,12 +506,11 @@ public class VisionModule {
     }
 
     private boolean camShouldControlLEDs() {
-        // Heuristic - if the camera has a known FOV or is a piCam, assume it's in use
-        // for
-        // vision processing, and should command stuff to the LED's.
-        // TODO: Make LED control a property of the camera itself and controllable in
-        // the UI.
-        return isVendorCamera();
+        // CSI cameras on coprocessors should still control the illumination LEDs even when
+        // vendorFOV is unmanaged (e.g. custom fisheye setups).
+        return isVendorCamera()
+                || visionSource.getCameraConfiguration().matchedCameraInfo.type()
+                        == CameraType.ZeroCopyPicam;
     }
 
     private void setVisionLEDs(boolean on) {

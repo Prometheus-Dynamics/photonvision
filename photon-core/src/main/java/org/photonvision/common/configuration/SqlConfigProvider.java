@@ -378,11 +378,12 @@ public class SqlConfigProvider extends ConfigProvider {
             // Replace this camera's row with the new settings
             var sqlString =
                     String.format(
-                            "REPLACE INTO %s (%s, %s, %s, %s) VALUES (?,?,?,?);",
+                            "REPLACE INTO %s (%s, %s, %s, %s, %s) VALUES (?,?,?,?,?);",
                             Tables.CAMERAS,
                             Columns.CAM_UNIQUE_NAME,
                             Columns.CAM_CONFIG_JSON,
                             Columns.CAM_DRIVERMODE_JSON,
+                            Columns.CAM_OTHERPATHS_JSON,
                             Columns.CAM_PIPELINE_JSONS);
 
             for (var c : config.getCameraConfigurations().entrySet()) {
@@ -392,6 +393,11 @@ public class SqlConfigProvider extends ConfigProvider {
                 statement.setString(1, c.getKey());
                 statement.setString(2, JacksonUtils.serializeToString(config));
                 statement.setString(3, JacksonUtils.serializeToString(config.driveModeSettings));
+                var otherPaths =
+                        config.matchedCameraInfo == null || config.matchedCameraInfo.otherPaths() == null
+                                ? new String[0]
+                                : config.matchedCameraInfo.otherPaths();
+                statement.setString(4, JacksonUtils.serializeToString(otherPaths));
 
                 // Serializing a list of abstract classes sucks. Instead, make it into an array
                 // of strings, which we can later unpack back into individual settings
@@ -408,7 +414,7 @@ public class SqlConfigProvider extends ConfigProvider {
                                         })
                                 .filter(Objects::nonNull)
                                 .toList();
-                statement.setString(4, JacksonUtils.serializeToString(settings));
+                statement.setString(5, JacksonUtils.serializeToString(settings));
 
                 statement.executeUpdate();
             }

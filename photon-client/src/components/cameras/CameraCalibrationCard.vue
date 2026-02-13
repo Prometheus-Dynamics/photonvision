@@ -28,6 +28,207 @@ const theme = useTheme();
 
 const settingsValid = ref(true);
 
+const FISHEYE_THETA_LIMIT_RAD = (89.5 * Math.PI) / 180;
+const FISHEYE_MAX_DIAGONAL_FOV_DEG = 179.0;
+
+const fisheyeDistortedTheta = (theta: number, coeffs: number[]): number => {
+  const t2 = theta * theta;
+  let tPow = t2;
+  let sum = 1;
+  for (let i = 0; i < coeffs.length; i++) {
+    const k = coeffs[i] ?? 0;
+    sum += k * tPow;
+    tPow *= t2;
+  }
+  return theta * sum;
+};
+
+const fisheyeDistortedThetaDerivative = (theta: number, coeffs: number[]): number => {
+  const t2 = theta * theta;
+  let tPow = t2;
+  let derivative = 1;
+  for (let i = 0; i < coeffs.length; i++) {
+    const k = coeffs[i] ?? 0;
+    derivative += (2 * i + 3) * k * tPow;
+    tPow *= t2;
+  }
+  return derivative;
+};
+
+const isFisheyeThetaMappingMonotonic = (coeffs: number[]): boolean => {
+  if (coeffs.length === 0) return false;
+  const samples = 2048;
+  let prev = 0;
+  for (let i = 1; i <= samples; i++) {
+    const theta = (FISHEYE_THETA_LIMIT_RAD * i) / samples;
+    const distorted = fisheyeDistortedTheta(theta, coeffs);
+    const derivative = fisheyeDistortedThetaDerivative(theta, coeffs);
+    if (!isFinite(distorted) || !isFinite(derivative) || derivative <= 1e-6 || distorted <= prev) {
+      return false;
+    }
+    prev = distorted;
+  }
+  return true;
+};
+
+const fisheyeThetaFromDistortedRadius = (distortedRadius: number, coeffs: number[]): number => {
+  if (!isFinite(distortedRadius) || distortedRadius < 0) return NaN;
+  if (distortedRadius === 0) return 0;
+
+  const maxDistorted = fisheyeDistortedTheta(FISHEYE_THETA_LIMIT_RAD, coeffs);
+  if (!isFinite(maxDistorted) || maxDistorted <= 0 || distortedRadius > maxDistorted) {
+    return NaN;
+  }
+
+  let lo = 0;
+  let hi = FISHEYE_THETA_LIMIT_RAD;
+
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const value = fisheyeDistortedTheta(mid, coeffs);
+    if (!isFinite(value)) return NaN;
+    if (value < distortedRadius) lo = mid;
+    else hi = mid;
+  }
+
+  return (lo + hi) / 2;
+};
+
+const fisheyePixelToRay = (
+  u: number,
+  v: number,
+  intrinsics: number[],
+  distortion: number[]
+): [number, number, number] | null => {
+  const fx = intrinsics[0];
+  const alpha = intrinsics[1] ?? 0;
+  const cx = intrinsics[2];
+  const fy = intrinsics[4];
+  const cy = intrinsics[5];
+
+  if (
+    !isFinite(fx) ||
+    !isFinite(fy) ||
+    !isFinite(alpha) ||
+    !isFinite(cx) ||
+    !isFinite(cy) ||
+    fx <= 0 ||
+    fy <= 0
+  ) {
+    return null;
+  }
+
+  const y = (v - cy) / fy;
+  const x = (u - cx - alpha * y) / fx;
+  if (!isFinite(x) || !isFinite(y)) return null;
+
+  const distortedRadius = Math.hypot(x, y);
+  if (distortedRadius < 1e-12) return [0, 0, 1];
+
+  const theta = fisheyeThetaFromDistortedRadius(distortedRadius, distortion);
+  if (!isFinite(theta) || theta < 0 || theta >= FISHEYE_THETA_LIMIT_RAD) return null;
+
+  const r = Math.tan(theta);
+  if (!isFinite(r) || r < 0) return null;
+
+  const scale = r / distortedRadius;
+  const rx = x * scale;
+  const ry = y * scale;
+  const rz = 1;
+  const norm = Math.hypot(rx, ry, rz);
+  if (!isFinite(norm) || norm <= 0) return null;
+
+  return [rx / norm, ry / norm, rz / norm];
+};
+
+const angleBetweenRaysDeg = (
+  a: [number, number, number] | null,
+  b: [number, number, number] | null
+): number => {
+  if (!a || !b) return NaN;
+  const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  if (!isFinite(dot)) return NaN;
+  return (Math.acos(dot) * 180) / Math.PI;
+};
+
+const computePinholeFov = (
+  width: number,
+  height: number,
+  intrinsics: number[]
+): { horizontal: number; vertical: number; diagonal: number } => {
+  const fx = intrinsics[0];
+  const fy = intrinsics[4];
+  const horizontal = 2 * Math.atan2(width / 2, fx) * (180 / Math.PI);
+  const vertical = 2 * Math.atan2(height / 2, fy) * (180 / Math.PI);
+  const diagonal =
+    2 *
+    Math.atan2(Math.sqrt(width ** 2 + (height / (fy / fx)) ** 2) / 2, fx) *
+    (180 / Math.PI);
+  return { horizontal, vertical, diagonal };
+};
+
+const computeFovFromCalibration = (
+  lensModel: string,
+  width: number,
+  height: number,
+  intrinsics: number[],
+  distortion: number[]
+): { horizontal: number; vertical: number; diagonal: number } => {
+  if (lensModel !== CalibrationLensModels.OpenCVFisheye) {
+    return computePinholeFov(width, height, intrinsics);
+  }
+
+  if (!isFisheyeThetaMappingMonotonic(distortion)) {
+    return { horizontal: NaN, vertical: NaN, diagonal: NaN };
+  }
+
+  const fx = intrinsics[0];
+  const alpha = intrinsics[1] ?? 0;
+  const cx = intrinsics[2];
+  const fy = intrinsics[4];
+  const cy = intrinsics[5];
+
+  if (
+    !isFinite(fx) ||
+    !isFinite(fy) ||
+    !isFinite(alpha) ||
+    !isFinite(cx) ||
+    !isFinite(cy) ||
+    fx <= 0 ||
+    fy <= 0
+  ) {
+    return { horizontal: NaN, vertical: NaN, diagonal: NaN };
+  }
+
+  const xCenter = Math.max(0, Math.min(width - 1, cx));
+  const yCenter = Math.max(0, Math.min(height - 1, cy));
+
+  const leftRay = fisheyePixelToRay(0, yCenter, intrinsics, distortion);
+  const rightRay = fisheyePixelToRay(width - 1, yCenter, intrinsics, distortion);
+  const topRay = fisheyePixelToRay(xCenter, 0, intrinsics, distortion);
+  const bottomRay = fisheyePixelToRay(xCenter, height - 1, intrinsics, distortion);
+  const tl = fisheyePixelToRay(0, 0, intrinsics, distortion);
+  const tr = fisheyePixelToRay(width - 1, 0, intrinsics, distortion);
+  const bl = fisheyePixelToRay(0, height - 1, intrinsics, distortion);
+  const br = fisheyePixelToRay(width - 1, height - 1, intrinsics, distortion);
+
+  const horizontal = angleBetweenRaysDeg(leftRay, rightRay);
+  const vertical = angleBetweenRaysDeg(topRay, bottomRay);
+  const diagonal = Math.max(angleBetweenRaysDeg(tl, br), angleBetweenRaysDeg(tr, bl));
+
+  if (
+    !isFinite(horizontal) ||
+    !isFinite(vertical) ||
+    !isFinite(diagonal) ||
+    diagonal <= 0 ||
+    diagonal > FISHEYE_MAX_DIAGONAL_FOV_DEG
+  ) {
+    return { horizontal: NaN, vertical: NaN, diagonal: NaN };
+  }
+
+  return { horizontal, vertical, diagonal };
+};
+
 const getUniqueVideoFormatsByResolution = (): VideoFormat[] => {
   const uniqueResolutions: VideoFormat[] = [];
   if (useCameraSettingsStore().currentCameraSettings.validVideoFormats.length === 0) return uniqueResolutions;
@@ -50,20 +251,19 @@ const getUniqueVideoFormatsByResolution = (): VideoFormat[] => {
           format.mean = calib.meanErrors.reduce((a, b) => a + b, 0) / calib.meanErrors.length;
         else format.mean = NaN;
 
-        format.horizontalFOV =
-          2 * Math.atan2(format.resolution.width / 2, calib.cameraIntrinsics.data[0]) * (180 / Math.PI);
-        format.verticalFOV =
-          2 * Math.atan2(format.resolution.height / 2, calib.cameraIntrinsics.data[4]) * (180 / Math.PI);
-        format.diagonalFOV =
-          2 *
-          Math.atan2(
-            Math.sqrt(
-              format.resolution.width ** 2 +
-                (format.resolution.height / (calib.cameraIntrinsics.data[4] / calib.cameraIntrinsics.data[0])) ** 2
-            ) / 2,
-            calib.cameraIntrinsics.data[0]
-          ) *
-          (180 / Math.PI);
+        const lensModel = (calib as unknown as { lensModel?: string; lensmodel?: string }).lensModel ??
+          (calib as unknown as { lensModel?: string; lensmodel?: string }).lensmodel ??
+          CalibrationLensModels.OpenCV;
+        const fovs = computeFovFromCalibration(
+          lensModel,
+          format.resolution.width,
+          format.resolution.height,
+          calib.cameraIntrinsics.data,
+          calib.distCoeffs.data
+        );
+        format.horizontalFOV = fovs.horizontal;
+        format.verticalFOV = fovs.vertical;
+        format.diagonalFOV = fovs.diagonal;
       }
       uniqueResolutions.push(format);
     }

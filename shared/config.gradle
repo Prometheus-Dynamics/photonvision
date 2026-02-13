@@ -45,7 +45,9 @@ model {
 
 task copyAllOutputs(type: Copy) {
     def outputsFolder = file("$project.buildDir/outputs")
-    destinationDir = outputsFolder
+    // Keep copied artifacts in a separate directory to avoid copying files
+    // onto themselves when archive tasks already write to build/outputs.
+    destinationDir = file("$project.buildDir/allOutputs")
 }
 
 ext.addTaskToCopyAllOutputs = { task ->

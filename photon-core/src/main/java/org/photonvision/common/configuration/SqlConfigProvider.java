@@ -61,13 +61,14 @@ public class SqlConfigProvider extends ConfigProvider {
     }
 
     private static final String dbName = "photon.sqlite";
-    // private final File rootFolder;
+    private final Path rootPath;
     private final String dbPath;
     private final String url;
 
     private final Object m_mutex = new Object();
 
     public SqlConfigProvider(Path rootPath) {
+        this.rootPath = rootPath;
         File rootFolder = rootPath.toFile();
         // Make sure root dir exists
         if (!rootFolder.exists()) {
@@ -254,6 +255,27 @@ public class SqlConfigProvider extends ConfigProvider {
         return true;
     }
 
+    /**
+     * The hardware config to use when the database has none. An OS image can ship its board's
+     * config (LED commands, vendor FOV, ...) as hardwareConfig.json in the config folder; it applies
+     * until a hardware config is uploaded or saved.
+     */
+    private HardwareConfig defaultHardwareConfig() {
+        var file = rootPath.resolve(ConfigManager.HW_CFG_FNAME);
+        if (Files.isRegularFile(file)) {
+            try {
+                var cfg = JacksonUtils.deserialize(file, HardwareConfig.class);
+                if (cfg != null) {
+                    logger.info("Loaded HardwareConfig from " + file);
+                    return cfg;
+                }
+            } catch (IOException e) {
+                logger.error("Could not read " + file + ", using the built-in default", e);
+            }
+        }
+        return new HardwareConfig();
+    }
+
     private <T> T loadConfigOrDefault(
             Connection conn, String key, Class<T> ref, Supplier<T> factory) {
         String configString = getOneConfigFile(conn, key);
@@ -302,7 +324,10 @@ public class SqlConfigProvider extends ConfigProvider {
         synchronized (m_mutex) {
             var hardwareConfig =
                     loadConfigOrDefault(
-                            conn, GlobalKeys.HARDWARE_CONFIG, HardwareConfig.class, HardwareConfig::new);
+                            conn,
+                            GlobalKeys.HARDWARE_CONFIG,
+                            HardwareConfig.class,
+                            this::defaultHardwareConfig);
             var hardwareSettings =
                     loadConfigOrDefault(
                             conn, GlobalKeys.HARDWARE_SETTINGS, HardwareSettings.class, HardwareSettings::new);

@@ -19,6 +19,7 @@ def nativeTasks = wpilibTools.createExtractionTasks {
 nativeTasks.addToSourceSetResources(sourceSets.main)
 
 dependencies {
+    wpilibNatives project(path: ':photon-targeting', configuration: 'wpilibNatives')
     wpilibNatives wpilibTools.deps.wpilib("wpimath")
     wpilibNatives wpilibTools.deps.wpilib("wpinet")
     wpilibNatives wpilibTools.deps.wpilib("wpiutil")
@@ -74,22 +75,6 @@ dependencies {
     }
 
     testImplementation group: 'org.junit-pioneer' , name: 'junit-pioneer', version: '2.2.0'
-}
-
-def coreProject = project
-def targetingProject = project(":photon-targeting")
-targetingProject.afterEvaluate {
-    def targetingZipBase = targetingProject.ext.find("zipBaseName")
-    if (targetingZipBase == null) {
-        return
-    }
-    def targetingZipClassifier = wpilibTools.getPlatformMapper().getWpilibClassifier()
-    def targetingZipPath = targetingProject.layout.buildDirectory.file(
-            "outputs/${targetingZipBase}-${targetingZipClassifier}.zip"
-    )
-    coreProject.dependencies {
-        wpilibNatives files(targetingZipPath)
-    }
 }
 
 task writeCurrentVersion {

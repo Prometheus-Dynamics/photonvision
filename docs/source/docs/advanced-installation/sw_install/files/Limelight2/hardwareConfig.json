@@ -1,7 +1,12 @@
 {
   "deviceName" : "Limelight 2",
-  "supportURL" : "https://limelightvision.io",
   "ledPins" : [ 17, 18 ],
   "ledsCanDim" : false,
+  "statusLEDConfig": {
+    "type": "GreenYellow",
+    "greenPin": 5,
+    "yellowPin": 4,
+    "activeHigh": false
+  },
   "vendorFOV" : 75.76079874010732
 }

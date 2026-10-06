@@ -17,19 +17,10 @@
 
 package org.photonvision.vision.pipeline;
 
-import edu.wpi.first.apriltag.AprilTagDetection;
-import edu.wpi.first.apriltag.AprilTagDetector;
-import edu.wpi.first.apriltag.AprilTagPoseEstimate;
-import edu.wpi.first.apriltag.AprilTagPoseEstimator.Config;
-import edu.wpi.first.math.geometry.CoordinateSystem;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Transform3d;
-import edu.wpi.first.math.util.Units;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.dataflow.structures.Packet;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
@@ -50,6 +41,15 @@ import org.photonvision.vision.pipe.impl.MultiTargetPNPPipe.MultiTargetPNPPipePa
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
 import org.photonvision.vision.target.TrackedTarget;
 import org.photonvision.vision.target.TrackedTarget.TargetCalculationParameters;
+import org.wpilib.math.geometry.CoordinateSystem;
+import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Transform3d;
+import org.wpilib.math.util.Units;
+import org.wpilib.vision.apriltag.AprilTagDetection;
+import org.wpilib.vision.apriltag.AprilTagDetector;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimate;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimator.Config;
 
 public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipelineSettings> {
     private static final Logger logger = new Logger(AprilTagPipeline.class, LogGroup.VisionModule);
@@ -123,9 +123,9 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
                                 settings.numIterations));
 
                 // TODO global state ew
-                var atfl = ConfigManager.getInstance().getConfig().getApriltagFieldLayout();
+                var field = ConfigProvider.getInstance().getConfig().getFieldLayout();
                 multiTagPNPPipe.setParams(
-                        new MultiTargetPNPPipeParams(frameStaticProperties.cameraCalibration, atfl, tagModel));
+                        new MultiTargetPNPPipeParams(frameStaticProperties.cameraCalibration, field, tagModel));
             }
         }
     }
@@ -181,7 +181,7 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
             // Clear target list that was used for multitag so we can add target transforms
             targetList.clear();
             // TODO global state again ew
-            var atfl = ConfigManager.getInstance().getConfig().getApriltagFieldLayout();
+            var field = ConfigProvider.getInstance().getConfig().getFieldLayout();
 
             for (AprilTagDetection detection : usedDetections) {
                 AprilTagPoseEstimate tagPoseEstimate = null;
@@ -197,7 +197,7 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
                 // If single-tag estimation was not done, this is a multi-target tag from the layout
                 if (tagPoseEstimate == null && multiTagResult.isPresent()) {
                     // compute this tag's camera-to-tag transform using the multitag result
-                    var tagPose = atfl.getTagPose(detection.getId());
+                    var tagPose = field.getTagPose(detection.getId());
                     if (tagPose.isPresent()) {
                         var camToTag =
                                 new Transform3d(
@@ -209,7 +209,7 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
                         camToTag =
                                 new Transform3d(
                                         camToTag.getTranslation(),
-                                        new Rotation3d(0, Math.PI, 0).plus(camToTag.getRotation()));
+                                        new Rotation3d(0, Math.PI, 0).rotateBy(camToTag.getRotation()));
                         tagPoseEstimate = new AprilTagPoseEstimate(camToTag, camToTag, 0, 0);
                     }
                 }
@@ -254,6 +254,8 @@ public class AprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipel
     public void release() {
         aprilTagDetectionPipe.release();
         singleTagPoseEstimatorPipe.release();
+        multiTagPNPPipe.release();
+        calculateFPSPipe.release();
         super.release();
     }
 }

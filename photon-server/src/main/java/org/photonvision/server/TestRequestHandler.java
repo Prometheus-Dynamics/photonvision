@@ -17,13 +17,14 @@
 
 package org.photonvision.server;
 
+import io.avaje.jsonb.Json;
+import io.avaje.jsonb.Jsonb;
 import io.javalin.http.Context;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.configuration.NeuralNetworkModelManager;
 import org.photonvision.common.hardware.Platform;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
-import org.photonvision.common.util.file.JacksonUtils;
 
 public class TestRequestHandler {
     // Treat all 2XX calls as "INFO"
@@ -35,16 +36,17 @@ public class TestRequestHandler {
     public static void handleResetRequest(Context ctx) {
         logger.info("Resetting Backend");
         // Reset backend
-        ConfigManager.nukeConfigDirectory();
-        ConfigManager.getInstance().load();
+        ConfigProvider.nukeConfigDirectory();
+        ConfigProvider.getInstance().load();
     }
 
-    private record PlatformOverrideRequest(Platform platform) {}
+    @Json
+    record PlatformOverrideRequest(Platform platform) {}
 
     public static void handlePlatformOverrideRequest(Context ctx) {
         try {
             PlatformOverrideRequest request =
-                    JacksonUtils.deserialize(ctx.body(), PlatformOverrideRequest.class);
+                    Jsonb.instance().type(PlatformOverrideRequest.class).fromJson(ctx.body());
             Platform platform = request.platform();
             logger.info("Overriding platform to: " + platform);
 

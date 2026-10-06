@@ -24,20 +24,10 @@
 
 package org.photonvision.simulation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import edu.wpi.first.math.MatBuilder;
-import edu.wpi.first.math.MathUtil;
-import edu.wpi.first.math.Matrix;
-import edu.wpi.first.math.Nat;
-import edu.wpi.first.math.Pair;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.Vector;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.math.numbers.*;
-import edu.wpi.first.wpilibj.DriverStation;
+import io.avaje.json.JsonIoException;
+import io.avaje.jsonb.Json;
+import io.avaje.jsonb.Jsonb;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -51,6 +41,18 @@ import org.opencv.core.Point;
 import org.opencv.imgproc.Imgproc;
 import org.photonvision.estimation.OpenCVHelp;
 import org.photonvision.estimation.RotTrlTransform3d;
+import org.wpilib.driverstation.DriverStationErrors;
+import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Translation3d;
+import org.wpilib.math.linalg.MatBuilder;
+import org.wpilib.math.linalg.Matrix;
+import org.wpilib.math.linalg.VecBuilder;
+import org.wpilib.math.linalg.Vector;
+import org.wpilib.math.numbers.*;
+import org.wpilib.math.util.Nat;
+import org.wpilib.util.Pair;
 
 /**
  * Calibration and performance values for this camera.
@@ -67,6 +69,26 @@ import org.photonvision.estimation.RotTrlTransform3d;
  * network latency and the latency reported will always be perfect.
  */
 public class SimCameraProperties {
+    @Json
+    record SimCameraData(SimCameraCalibrationData[] calibrations) {
+        @Json
+        record SimCameraCalibrationData(
+                ResolutionData resolution,
+                CameraIntrinsicsData cameraIntrinsics,
+                DistortionCoefficients distCoeffs,
+                double[] perViewErrors,
+                double standardDeviation) {
+            @Json
+            record ResolutionData(int width, int height) {}
+
+            @Json
+            record CameraIntrinsicsData(double[] data) {}
+
+            @Json
+            record DistortionCoefficients(double[] data) {}
+        }
+    }
+
     private final Random rand = new Random();
     // calibration
     private int resWidth;
@@ -115,47 +137,26 @@ public class SimCameraProperties {
      *     calibrated resolution.
      */
     public SimCameraProperties(Path path, int width, int height) throws IOException {
-        var mapper = new ObjectMapper();
-        var json = mapper.readTree(path.toFile());
-        json = json.get("calibrations");
+        SimCameraData data;
+        try (var stream = new FileInputStream(path.toFile())) {
+            data = Jsonb.instance().type(SimCameraData.class).fromJson(stream);
+        } catch (JsonIoException e) {
+            throw new IOException("Invalid calibration JSON", e);
+        }
         boolean success = false;
-        try {
-            for (int i = 0; i < json.size() && !success; i++) {
-                // check if this calibration entry is our desired resolution
-                var calib = json.get(i);
-                int jsonWidth = calib.get("resolution").get("width").asInt();
-                int jsonHeight = calib.get("resolution").get("height").asInt();
-                if (jsonWidth != width || jsonHeight != height) continue;
-                // get the relevant calibration values
-                var jsonIntrinsicsNode = calib.get("cameraIntrinsics").get("data");
-                double[] jsonIntrinsics = new double[jsonIntrinsicsNode.size()];
-                for (int j = 0; j < jsonIntrinsicsNode.size(); j++) {
-                    jsonIntrinsics[j] = jsonIntrinsicsNode.get(j).asDouble();
-                }
-                var jsonDistortNode = calib.get("distCoeffs").get("data");
-                double[] jsonDistortion = new double[8];
-                Arrays.fill(jsonDistortion, 0);
-                for (int j = 0; j < jsonDistortNode.size(); j++) {
-                    jsonDistortion[j] = jsonDistortNode.get(j).asDouble();
-                }
-                var jsonViewErrors = calib.get("perViewErrors");
-                double jsonAvgError = 0;
-                for (int j = 0; j < jsonViewErrors.size(); j++) {
-                    jsonAvgError += jsonViewErrors.get(j).asDouble();
-                }
-                jsonAvgError /= jsonViewErrors.size();
-                double jsonErrorStdDev = calib.get("standardDeviation").asDouble();
-                // assign the read JSON values to this CameraProperties
-                setCalibration(
-                        jsonWidth,
-                        jsonHeight,
-                        MatBuilder.fill(Nat.N3(), Nat.N3(), jsonIntrinsics),
-                        MatBuilder.fill(Nat.N8(), Nat.N1(), jsonDistortion));
-                setCalibError(jsonAvgError, jsonErrorStdDev);
-                success = true;
-            }
-        } catch (Exception e) {
-            throw new IOException("Invalid calibration JSON");
+        for (var calib : data.calibrations) {
+            // check if this calibration entry is our desired resolution
+            if (calib.resolution.width != width || calib.resolution.height != height) continue;
+            // get the relevant calibration values
+            double avgViewError = Arrays.stream(calib.perViewErrors).average().orElse(0);
+            // assign the read JSON values to this CameraProperties
+            setCalibration(
+                    calib.resolution.width,
+                    calib.resolution.height,
+                    MatBuilder.fill(Nat.N3(), Nat.N3(), calib.cameraIntrinsics.data),
+                    MatBuilder.fill(Nat.N8(), Nat.N1(), calib.distCoeffs.data));
+            setCalibError(avgViewError, calib.standardDeviation);
+            success = true;
         }
         if (!success) throw new IOException("Requested resolution not found in calibration");
     }
@@ -167,8 +168,8 @@ public class SimCameraProperties {
 
     public SimCameraProperties setCalibration(int resWidth, int resHeight, Rotation2d fovDiag) {
         if (fovDiag.getDegrees() < 1 || fovDiag.getDegrees() > 179) {
-            fovDiag = Rotation2d.fromDegrees(MathUtil.clamp(fovDiag.getDegrees(), 1, 179));
-            DriverStation.reportError(
+            fovDiag = Rotation2d.fromDegrees(Math.clamp(fovDiag.getDegrees(), 1, 179));
+            DriverStationErrors.reportError(
                     "Requested invalid FOV! Clamping between (1, 179) degrees...", false);
         }
         double resDiag = Math.hypot(resWidth, resHeight);
@@ -398,9 +399,10 @@ public class SimCameraProperties {
      * @return The percentage
      */
     public double getContourAreaPercent(Point[] points) {
-        return Imgproc.contourArea(new MatOfPoint2f(OpenCVHelp.getConvexHull(points)))
-                / getResArea()
-                * 100;
+        var contour = new MatOfPoint2f(OpenCVHelp.getConvexHull(points));
+        var percent = Imgproc.contourArea(contour) / getResArea() * 100;
+        contour.release();
+        return percent;
     }
 
     /** The yaw from the principal point of this camera to the pixel x value. Positive values left. */

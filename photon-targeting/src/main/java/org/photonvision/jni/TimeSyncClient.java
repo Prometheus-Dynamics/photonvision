@@ -17,23 +17,24 @@
 
 package org.photonvision.jni;
 
-import edu.wpi.first.networktables.NetworkTablesJNI;
+import org.wpilib.networktables.NetworkTablesJNI;
 
 /**
- * Send ping-pongs to estimate server time, relative to nt::Now. The underlying implementation does
- * technically allow us to provide a different source, but all photon code assumes nt::Now is used
+ * Send ping-pongs to estimate server time, relative to wpi::nt::Now. The underlying implementation
+ * does technically allow us to provide a different source, but all photon code assumes wpi::nt::Now
+ * is used
  */
 public class TimeSyncClient {
     public static class PingMetadata {
-        // offset, us
+        // offset, ns
         public long offset;
         // outgoing count
         public long pingsSent;
         // incoming count
         public long pongsReceived;
-        // when we last heard back from the server, uS, in local time base
+        // when we last heard back from the server, nS, in local time base
         public long lastPongTime;
-        // RTT2, time from ping send to pong receive at the client, uS
+        // RTT2, time from ping send to pong receive at the client, nS
         public long rtt2;
 
         public PingMetadata(
@@ -61,7 +62,7 @@ public class TimeSyncClient {
         }
 
         /**
-         * How long, in us, since we last heard back from the server
+         * How long, in ns, since we last heard back from the server
          *
          * @return Time between last pong RX and now, or Long.MAX_VALUE if we have heard zero pongs
          */
@@ -112,10 +113,10 @@ public class TimeSyncClient {
     }
 
     /**
-     * This offset, when added to the current value of nt::now(), yields the timestamp in the timebase
-     * of the TSP Server
+     * This offset, when added to the current value of wpi::nt::now(), yields the timestamp in the
+     * timebase of the TSP Server
      *
-     * @return
+     * @return The offset in nanoseconds
      */
     public long getOffset() {
         synchronized (mutex) {
@@ -131,7 +132,7 @@ public class TimeSyncClient {
     /**
      * Best estimate of the current timestamp at the TSP server
      *
-     * @return The current time estimate, in microseconds, at the TSP server
+     * @return The current time estimate, in nanoseconds, at the TSP server
      */
     public long currentServerTimestamp() {
         return NetworkTablesJNI.now() + getOffset();

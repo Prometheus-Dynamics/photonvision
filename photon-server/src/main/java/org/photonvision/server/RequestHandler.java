@@ -17,8 +17,9 @@
 
 package org.photonvision.server;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.avaje.json.JsonException;
+import io.avaje.jsonb.Json;
+import io.avaje.jsonb.Types;
 import io.javalin.http.Context;
 import io.javalin.http.UploadedFile;
 import java.io.*;
@@ -29,14 +30,16 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.apache.commons.io.FileUtils;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfInt;
+import org.opencv.core.Point3;
 import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.configuration.NetworkConfig;
 import org.photonvision.common.configuration.NeuralNetworkModelManager;
 import org.photonvision.common.configuration.NeuralNetworkModelsSettings.ModelProperties;
@@ -53,14 +56,14 @@ import org.photonvision.common.logging.Logger;
 import org.photonvision.common.networking.NetworkManager;
 import org.photonvision.common.util.ShellExec;
 import org.photonvision.common.util.TimedTaskManager;
-import org.photonvision.common.util.file.JacksonUtils;
 import org.photonvision.common.util.file.ProgramDirectoryUtilities;
+import org.photonvision.tflite.TFLiteJNI.TFLiteSource;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.objects.ObjectDetector;
 import org.photonvision.vision.objects.RknnModel;
-import org.photonvision.vision.objects.RubikModel;
+import org.photonvision.vision.objects.TFLiteModel;
 import org.photonvision.vision.processes.VisionSourceManager;
 import org.zeroturnaround.zip.ZipUtil;
 
@@ -70,8 +73,6 @@ public class RequestHandler {
     // Treat all 5XX calls as "ERROR"
 
     private static final Logger logger = new Logger(RequestHandler.class, LogGroup.WebServer);
-
-    private static final ObjectMapper kObjectMapper = new ObjectMapper();
 
     private static boolean testMode = false;
 
@@ -84,7 +85,11 @@ public class RequestHandler {
         testMode = isTestMode;
     }
 
-    private record CommonCameraUniqueName(String cameraUniqueName) {}
+    @Json
+    record CommonCameraUniqueName(String cameraUniqueName) {}
+
+    @Json
+    record CalibrationEndRequest(String cameraUniqueName, boolean cancel) {}
 
     public static void onSettingsImportRequest(Context ctx) {
         var file = ctx.uploadedFile("data");
@@ -117,13 +122,13 @@ public class RequestHandler {
             return;
         }
 
-        ConfigManager.getInstance().setWriteTaskEnabled(false);
-        ConfigManager.getInstance().disableFlushOnShutdown();
+        ConfigProvider.getInstance().setWriteTaskEnabled(false);
+        ConfigProvider.getInstance().disableFlushOnShutdown();
         // We want to delete the -whole- zip file, so we need to teardown loggers for
         // now
         logger.info("Writing new settings zip (logs may be truncated)...");
         Logger.closeAllLoggers();
-        if (ConfigManager.saveUploadedSettingsZip(tempFilePath.get())) {
+        if (ConfigProvider.saveUploadedSettingsZip(tempFilePath.get())) {
             ctx.status(200);
             ctx.result("Successfully saved the uploaded settings zip, rebooting...");
             restartProgram();
@@ -137,7 +142,7 @@ public class RequestHandler {
         logger.info("Exporting Settings to ZIP Archive");
 
         try {
-            var zip = ConfigManager.getInstance().getSettingsFolderAsZip();
+            var zip = ConfigProvider.getInstance().getSettingsFolderAsZip();
             var stream = new FileInputStream(zip);
             logger.info("Uploading settings with size " + stream.available());
 
@@ -185,7 +190,7 @@ public class RequestHandler {
             return;
         }
 
-        if (ConfigManager.getInstance().saveUploadedHardwareConfig(tempFilePath.get().toPath())) {
+        if (ConfigProvider.getInstance().saveUploadedHardwareConfig(tempFilePath.get().toPath())) {
             ctx.status(200);
             ctx.result("Successfully saved the uploaded hardware config, rebooting...");
             logger.info("Successfully saved the uploaded hardware config, rebooting...");
@@ -228,7 +233,7 @@ public class RequestHandler {
             return;
         }
 
-        if (ConfigManager.getInstance().saveUploadedHardwareSettings(tempFilePath.get().toPath())) {
+        if (ConfigProvider.getInstance().saveUploadedHardwareSettings(tempFilePath.get().toPath())) {
             ctx.status(200);
             ctx.result("Successfully saved the uploaded hardware settings, rebooting...");
             logger.info("Successfully saved the uploaded hardware settings, rebooting...");
@@ -271,7 +276,7 @@ public class RequestHandler {
             return;
         }
 
-        if (ConfigManager.getInstance().saveUploadedNetworkConfig(tempFilePath.get().toPath())) {
+        if (ConfigProvider.getInstance().saveUploadedNetworkConfig(tempFilePath.get().toPath())) {
             ctx.status(200);
             ctx.result("Successfully saved the uploaded network config, rebooting...");
             logger.info("Successfully saved the uploaded network config, rebooting...");
@@ -283,7 +288,7 @@ public class RequestHandler {
         }
     }
 
-    public static void onAprilTagFieldLayoutRequest(Context ctx) {
+    public static void onFieldLayoutRequest(Context ctx) {
         var file = ctx.uploadedFile("data");
 
         if (file == null) {
@@ -314,15 +319,15 @@ public class RequestHandler {
             return;
         }
 
-        if (ConfigManager.getInstance().saveUploadedAprilTagFieldLayout(tempFilePath.get().toPath())) {
+        if (ConfigProvider.getInstance().saveUploadedFieldLayout(tempFilePath.get().toPath())) {
             ctx.status(200);
-            ctx.result("Successfully saved the uploaded AprilTagFieldLayout, rebooting...");
-            logger.info("Successfully saved the uploaded AprilTagFieldLayout, rebooting...");
+            ctx.result("Successfully saved the uploaded FieldLayout, rebooting...");
+            logger.info("Successfully saved the uploaded FieldLayout, rebooting...");
             restartProgram();
         } else {
             ctx.status(500);
-            ctx.result("There was an error while saving the uploaded AprilTagFieldLayout");
-            logger.error("There was an error while saving the uploaded AprilTagFieldLayout");
+            ctx.result("There was an error while saving the uploaded FieldLayout");
+            logger.error("There was an error while saving the uploaded FieldLayout");
         }
     }
 
@@ -372,12 +377,12 @@ public class RequestHandler {
     public static void onGeneralSettingsRequest(Context ctx) {
         NetworkConfig config;
         try {
-            config = kObjectMapper.readValue(ctx.bodyInputStream(), NetworkConfig.class);
+            config = ctx.bodyAsClass(NetworkConfig.class);
 
             ctx.status(200);
             ctx.result("Successfully saved general settings");
             logger.info("Successfully saved general settings");
-        } catch (IOException e) {
+        } catch (IllegalStateException | JsonException e) {
             // If the settings can't be parsed, use the default network settings
             config = new NetworkConfig();
 
@@ -386,24 +391,24 @@ public class RequestHandler {
             logger.error("The provided general settings were malformed", e);
         }
 
-        ConfigManager.getInstance().setNetworkSettings(config);
-        ConfigManager.getInstance().requestSave();
+        ConfigProvider.getInstance().setNetworkSettings(config);
+        ConfigProvider.getInstance().requestSave();
 
         NetworkManager.getInstance().reinitialize();
 
         NetworkTablesManager.getInstance().setConfig(config);
     }
 
-    private record CameraSettingsRequest(
-            double fov, HashMap<CameraQuirk, Boolean> quirksToChange, String cameraUniqueName) {}
+    @Json
+    record CameraSettingsRequest(
+            double fov, Map<CameraQuirk, Boolean> quirksToChange, String cameraUniqueName) {}
 
     public static void onCameraSettingsRequest(Context ctx) {
         try {
-            CameraSettingsRequest request =
-                    kObjectMapper.readValue(ctx.body(), CameraSettingsRequest.class);
+            CameraSettingsRequest request = ctx.bodyAsClass(CameraSettingsRequest.class);
             // Extract the settings from the request
             double fov = request.fov;
-            HashMap<CameraQuirk, Boolean> quirksToChange = request.quirksToChange;
+            Map<CameraQuirk, Boolean> quirksToChange = request.quirksToChange;
             String cameraUniqueName = request.cameraUniqueName;
 
             if (cameraUniqueName == null || cameraUniqueName.isEmpty()) {
@@ -488,15 +493,23 @@ public class RequestHandler {
         logger.info("Calibrating camera! This will take a long time...");
 
         try {
-            CommonCameraUniqueName request =
-                    kObjectMapper.readValue(ctx.body(), CommonCameraUniqueName.class);
+            CalibrationEndRequest request = ctx.bodyAsClass(CalibrationEndRequest.class);
 
             var calData =
                     VisionSourceManager.getInstance()
                             .vmm
                             .getModule(request.cameraUniqueName)
-                            .endCalibration();
+                            .endCalibration(request.cancel);
             if (calData == null) {
+                if (request.cancel) {
+                    ctx.result("The calibration process was canceled");
+                    ctx.status(200);
+                    logger.info(
+                            "Calibration canceled for module at cameraUniqueName ("
+                                    + request.cameraUniqueName
+                                    + ")");
+                    return;
+                }
                 ctx.result("The calibration process failed");
                 ctx.status(500);
                 logger.error(
@@ -509,7 +522,7 @@ public class RequestHandler {
             ctx.result("Camera calibration successfully completed!");
             ctx.status(200);
             logger.info("Camera calibration successfully completed!");
-        } catch (JsonProcessingException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(400);
             ctx.result(
                     "The 'cameraUniqueName' field was not found in the request. Please make sure the cameraUniqueName of the vision module is specified with the 'cameraUniqueName' key.");
@@ -523,13 +536,13 @@ public class RequestHandler {
         }
     }
 
-    private record DataCalibrationImportRequest(
+    @Json
+    record DataCalibrationImportRequest(
             String cameraUniqueName, CameraCalibrationCoefficients calibration) {}
 
     public static void onDataCalibrationImportRequest(Context ctx) {
         try {
-            DataCalibrationImportRequest request =
-                    kObjectMapper.readValue(ctx.req().getInputStream(), DataCalibrationImportRequest.class);
+            DataCalibrationImportRequest request = ctx.bodyAsClass(DataCalibrationImportRequest.class);
 
             var uploadCalibrationEvent =
                     new IncomingWebSocketEvent<>(
@@ -543,7 +556,7 @@ public class RequestHandler {
             ctx.status(200);
             ctx.result("Calibration imported successfully from imported data!");
             logger.info("Calibration imported successfully from imported data!");
-        } catch (JsonProcessingException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(400);
             ctx.result("The provided calibration data was malformed");
             logger.error("The provided calibration data was malformed", e);
@@ -651,7 +664,7 @@ public class RequestHandler {
 
             Path modelPath =
                     Paths.get(
-                            ConfigManager.getInstance().getModelsDirectory().toString(), modelFile.filename());
+                            ConfigProvider.getInstance().getModelsDirectory().toString(), modelFile.filename());
 
             if (modelPath.toFile().exists()) {
                 ctx.status(400);
@@ -678,7 +691,7 @@ public class RequestHandler {
                 try {
                     objDetector =
                             switch (family) {
-                                case RUBIK -> new RubikModel(modelProperties).load();
+                                case RUBIK -> new TFLiteModel(modelProperties, TFLiteSource.RUBIK).load();
                                 case RKNN -> new RknnModel(modelProperties).load();
                             };
                 } catch (RuntimeException e) {
@@ -702,13 +715,13 @@ public class RequestHandler {
                     }
                 }
             }
-            ConfigManager.getInstance()
+            ConfigProvider.getInstance()
                     .getConfig()
-                    .neuralNetworkPropertyManager()
+                    .getNeuralNetworkProperties()
                     .addModelProperties(modelProperties);
 
             logger.debug(
-                    ConfigManager.getInstance().getConfig().neuralNetworkPropertyManager().toString());
+                    ConfigProvider.getInstance().getConfig().getNeuralNetworkProperties().toString());
 
             NeuralNetworkModelManager.getInstance().discoverModels();
 
@@ -722,14 +735,14 @@ public class RequestHandler {
                 .publishEvent(
                         new OutgoingUIEvent<>(
                                 "fullsettings",
-                                UIPhotonConfiguration.programStateToUi(ConfigManager.getInstance().getConfig())));
+                                UIPhotonConfiguration.programStateToUi(ConfigProvider.getInstance().getConfig())));
     }
 
     public static void onExportObjectDetectionModelsRequest(Context ctx) {
         logger.info("Exporting Object Detection Models to ZIP Archive");
 
         try {
-            var zip = ConfigManager.getInstance().getObjectDetectionExportAsZip();
+            var zip = ConfigProvider.getInstance().getObjectDetectionExportAsZip();
             var stream = new FileInputStream(zip);
             logger.info("Uploading object detection models with size " + stream.available());
 
@@ -814,7 +827,7 @@ public class RequestHandler {
             tempDir = Files.createTempDirectory("photonvision-od-models");
             ZipUtil.unpack(tempFilePath.get(), tempDir.toFile());
 
-            Path targetModelsDir = ConfigManager.getInstance().getModelsDirectory().toPath();
+            Path targetModelsDir = ConfigProvider.getInstance().getModelsDirectory().toPath();
 
             // Copy all files from the source models directory to the target models
             // directory
@@ -840,7 +853,7 @@ public class RequestHandler {
             return;
         }
 
-        if (ConfigManager.getInstance()
+        if (ConfigProvider.getInstance()
                 .saveUploadedNeuralNetworkProperties(
                         Path.of(tempDir.toString(), "photonvision-object-detection-models.json"))) {
             ctx.status(200);
@@ -857,17 +870,18 @@ public class RequestHandler {
                 .publishEvent(
                         new OutgoingUIEvent<>(
                                 "fullsettings",
-                                UIPhotonConfiguration.programStateToUi(ConfigManager.getInstance().getConfig())));
+                                UIPhotonConfiguration.programStateToUi(ConfigProvider.getInstance().getConfig())));
     }
 
-    private record DeleteObjectDetectionModelRequest(Path modelPath) {}
+    @Json
+    record DeleteObjectDetectionModelRequest(Path modelPath) {}
 
     public static void onDeleteObjectDetectionModelRequest(Context ctx) {
         logger.info("Deleting object detection model");
 
         try {
             DeleteObjectDetectionModelRequest request =
-                    JacksonUtils.deserialize(ctx.body(), DeleteObjectDetectionModelRequest.class);
+                    ctx.bodyAsClass(DeleteObjectDetectionModelRequest.class);
 
             if (request.modelPath == null) {
                 ctx.status(400);
@@ -890,9 +904,9 @@ public class RequestHandler {
                 return;
             }
 
-            if (!ConfigManager.getInstance()
+            if (!ConfigProvider.getInstance()
                     .getConfig()
-                    .neuralNetworkPropertyManager()
+                    .getNeuralNetworkProperties()
                     .removeModel(request.modelPath)) {
                 ctx.status(400);
                 ctx.result("The model's information was not found in the config");
@@ -908,7 +922,8 @@ public class RequestHandler {
                     .publishEvent(
                             new OutgoingUIEvent<>(
                                     "fullsettings",
-                                    UIPhotonConfiguration.programStateToUi(ConfigManager.getInstance().getConfig())));
+                                    UIPhotonConfiguration.programStateToUi(
+                                            ConfigProvider.getInstance().getConfig())));
 
         } catch (Exception e) {
             ctx.status(500);
@@ -917,12 +932,13 @@ public class RequestHandler {
         }
     }
 
-    private record RenameObjectDetectionModelRequest(Path modelPath, String newName) {}
+    @Json
+    record RenameObjectDetectionModelRequest(Path modelPath, String newName) {}
 
     public static void onRenameObjectDetectionModelRequest(Context ctx) {
         try {
             RenameObjectDetectionModelRequest request =
-                    JacksonUtils.deserialize(ctx.body(), RenameObjectDetectionModelRequest.class);
+                    ctx.bodyAsClass(RenameObjectDetectionModelRequest.class);
 
             if (request.modelPath == null) {
                 ctx.status(400);
@@ -945,9 +961,9 @@ public class RequestHandler {
                 return;
             }
 
-            if (!ConfigManager.getInstance()
+            if (!ConfigProvider.getInstance()
                     .getConfig()
-                    .neuralNetworkPropertyManager()
+                    .getNeuralNetworkProperties()
                     .renameModel(request.modelPath, request.newName)) {
                 ctx.status(400);
                 ctx.result("The model's information was not found in the config");
@@ -962,7 +978,8 @@ public class RequestHandler {
                     .publishEvent(
                             new OutgoingUIEvent<>(
                                     "fullsettings",
-                                    UIPhotonConfiguration.programStateToUi(ConfigManager.getInstance().getConfig())));
+                                    UIPhotonConfiguration.programStateToUi(
+                                            ConfigProvider.getInstance().getConfig())));
         } catch (Exception e) {
             ctx.status(500);
             ctx.result("Error renaming object detection model: " + e.getMessage());
@@ -987,19 +1004,19 @@ public class RequestHandler {
                 .publishEvent(
                         new OutgoingUIEvent<>(
                                 "fullsettings",
-                                UIPhotonConfiguration.programStateToUi(ConfigManager.getInstance().getConfig())));
+                                UIPhotonConfiguration.programStateToUi(ConfigProvider.getInstance().getConfig())));
     }
 
     public static void onDeviceRestartRequest(Context ctx) {
         ctx.status(HardwareManager.getInstance().restartDevice() ? 204 : 500);
     }
 
-    private record CameraNicknameChangeRequest(String name, String cameraUniqueName) {}
+    @Json
+    record CameraNicknameChangeRequest(String name, String cameraUniqueName) {}
 
     public static void onCameraNicknameChangeRequest(Context ctx) {
         try {
-            CameraNicknameChangeRequest request =
-                    kObjectMapper.readValue(ctx.body(), CameraNicknameChangeRequest.class);
+            CameraNicknameChangeRequest request = ctx.bodyAsClass(CameraNicknameChangeRequest.class);
 
             VisionSourceManager.getInstance()
                     .vmm
@@ -1008,7 +1025,7 @@ public class RequestHandler {
             ctx.status(200);
             ctx.result("Successfully changed the camera name to: " + request.name);
             logger.info("Successfully changed the camera name to: " + request.name);
-        } catch (JsonProcessingException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(400).result("Invalid JSON format");
             logger.error("Failed to process camera nickname change request", e);
         } catch (Exception e) {
@@ -1038,8 +1055,8 @@ public class RequestHandler {
                 module.getStateAsCameraConfig().calibrations.stream()
                         .filter(
                                 it ->
-                                        Math.abs(it.unrotatedImageSize.width - width) < 1e-4
-                                                && Math.abs(it.unrotatedImageSize.height - height) < 1e-4)
+                                        Math.abs(it.resolution.width - width) < 1e-4
+                                                && Math.abs(it.resolution.height - height) < 1e-4)
                         .findFirst()
                         .orElse(null);
 
@@ -1048,16 +1065,61 @@ public class RequestHandler {
             return;
         }
 
+        ctx.contentType("application/json");
         ctx.json(calList);
         ctx.status(200);
     }
 
-    private record CalibrationRemoveRequest(int width, int height, String cameraUniqueName) {}
+    public static void onUncertaintyJsonRequest(Context ctx) {
+        String cameraUniqueName = ctx.queryParam("cameraUniqueName");
+        var width = Integer.parseInt(ctx.queryParam("width"));
+        var height = Integer.parseInt(ctx.queryParam("height"));
+
+        var module = VisionSourceManager.getInstance().vmm.getModule(cameraUniqueName);
+        if (module == null) {
+            ctx.status(404);
+            return;
+        }
+
+        CameraCalibrationCoefficients calList =
+                module.getStateAsCameraConfig().calibrations.stream()
+                        .filter(
+                                it ->
+                                        Math.abs(it.resolution.width - width) < 1e-4
+                                                && Math.abs(it.resolution.height - height) < 1e-4)
+                        .findFirst()
+                        .orElse(null);
+
+        if (calList == null) {
+            ctx.status(404);
+            return;
+        }
+
+        try {
+            ctx.json(calList.estimateUncertainty(), Types.listOf(Point3.class));
+            ctx.status(200);
+        } catch (Exception e) {
+            ctx.status(422)
+                    .result("Unable to estimate uncertainty for this calibration: " + e.getMessage());
+            logger.error(
+                    "Unable to estimate uncertainty for camera "
+                            + cameraUniqueName
+                            + " at "
+                            + width
+                            + "x"
+                            + height
+                            + ": "
+                            + e.getMessage(),
+                    e);
+        }
+    }
+
+    @Json
+    record CalibrationRemoveRequest(int width, int height, String cameraUniqueName) {}
 
     public static void onCalibrationRemoveRequest(Context ctx) {
         try {
-            CalibrationRemoveRequest request =
-                    kObjectMapper.readValue(ctx.body(), CalibrationRemoveRequest.class);
+            CalibrationRemoveRequest request = ctx.bodyAsClass(CalibrationRemoveRequest.class);
 
             logger.info(
                     "Attempting to remove calibration for camera: "
@@ -1083,7 +1145,7 @@ public class RequestHandler {
                             + request.width
                             + "x"
                             + request.height);
-        } catch (JsonProcessingException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(400).result("Invalid JSON format");
             logger.error("Failed to process calibration removed request", e);
         } catch (Exception e) {
@@ -1107,8 +1169,8 @@ public class RequestHandler {
                         .stream()
                         .filter(
                                 it ->
-                                        Math.abs(it.unrotatedImageSize.width - width) < 1e-4
-                                                && Math.abs(it.unrotatedImageSize.height - height) < 1e-4)
+                                        Math.abs(it.resolution.width - width) < 1e-4
+                                                && Math.abs(it.resolution.height - height) < 1e-4)
                         .findFirst()
                         .orElse(null);
 
@@ -1146,8 +1208,8 @@ public class RequestHandler {
                 cc.calibrations.stream()
                         .filter(
                                 it ->
-                                        Math.abs(it.unrotatedImageSize.width - width) < 1e-4
-                                                && Math.abs(it.unrotatedImageSize.height - height) < 1e-4)
+                                        Math.abs(it.resolution.width - width) < 1e-4
+                                                && Math.abs(it.resolution.height - height) < 1e-4)
                         .findFirst()
                         .orElse(null);
 
@@ -1157,7 +1219,7 @@ public class RequestHandler {
         }
 
         var filename = "photon_calibration_" + cc.uniqueName + "_" + width + "x" + height + ".json";
-        ctx.contentType("application/zip");
+        ctx.contentType("application/json");
         ctx.header("Content-Disposition", "attachment; filename=\"" + filename + "\"");
         ctx.json(calList);
 
@@ -1165,8 +1227,8 @@ public class RequestHandler {
     }
 
     public static void onImageSnapshotsRequest(Context ctx) {
-        var snapshots = new ArrayList<HashMap<String, Object>>();
-        var cameraDirs = ConfigManager.getInstance().getImageSavePath().toFile().listFiles();
+        var snapshots = new ArrayList<Map<String, Object>>();
+        var cameraDirs = ConfigProvider.getInstance().getImageSavePath().toFile().listFiles();
 
         if (cameraDirs != null) {
             try {
@@ -1198,24 +1260,24 @@ public class RequestHandler {
         }
 
         ctx.status(200);
+        ctx.contentType("application/json");
         ctx.json(snapshots);
     }
 
     public static void onCameraCalibImagesRequest(Context ctx) {
         try {
-            HashMap<String, HashMap<String, ArrayList<HashMap<String, Object>>>> snapshots =
-                    new HashMap<>();
+            Map<String, Map<String, ArrayList<Map<String, Object>>>> snapshots = new HashMap<>();
 
-            var cameraDirs = ConfigManager.getInstance().getCalibDir().toFile().listFiles();
+            var cameraDirs = ConfigProvider.getInstance().getCalibDir().toFile().listFiles();
             if (cameraDirs != null) {
-                var camData = new HashMap<String, ArrayList<HashMap<String, Object>>>();
+                var camData = new HashMap<String, ArrayList<Map<String, Object>>>();
                 for (var cameraDir : cameraDirs) {
                     var resolutionDirs = cameraDir.listFiles();
                     if (resolutionDirs == null) continue;
                     for (var resolutionDir : resolutionDirs) {
                         var calibImages = resolutionDir.listFiles();
                         if (calibImages == null) continue;
-                        var resolutionImages = new ArrayList<HashMap<String, Object>>();
+                        var resolutionImages = new ArrayList<Map<String, Object>>();
                         for (var calibImg : calibImages) {
                             var snapshotData = new HashMap<String, Object>();
 
@@ -1237,6 +1299,7 @@ public class RequestHandler {
                 }
             }
 
+            ctx.contentType("application/json");
             ctx.json(snapshots);
         } catch (Exception e) {
             ctx.status(500);
@@ -1302,11 +1365,11 @@ public class RequestHandler {
     }
 
     public static void onNukeConfigDirectory(Context ctx) {
-        ConfigManager.getInstance().setWriteTaskEnabled(false);
-        ConfigManager.getInstance().disableFlushOnShutdown();
+        ConfigProvider.getInstance().setWriteTaskEnabled(false);
+        ConfigProvider.getInstance().disableFlushOnShutdown();
 
         Logger.closeAllLoggers();
-        if (ConfigManager.nukeConfigDirectory()) {
+        if (ConfigProvider.nukeConfigDirectory()) {
             ctx.status(200);
             ctx.result("Successfully nuked config dir");
             restartProgram();
@@ -1318,13 +1381,12 @@ public class RequestHandler {
 
     public static void onNukeOneCamera(Context ctx) {
         try {
-            CommonCameraUniqueName request =
-                    kObjectMapper.readValue(ctx.body(), CommonCameraUniqueName.class);
+            CommonCameraUniqueName request = ctx.bodyAsClass(CommonCameraUniqueName.class);
 
             logger.warn("Deleting camera name " + request.cameraUniqueName);
 
             var cameraDir =
-                    ConfigManager.getInstance()
+                    ConfigProvider.getInstance()
                             .getCalibrationImageSavePath(request.cameraUniqueName)
                             .toFile();
             if (cameraDir.exists()) {
@@ -1334,7 +1396,7 @@ public class RequestHandler {
             VisionSourceManager.getInstance().deleteVisionSource(request.cameraUniqueName);
 
             ctx.status(200);
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException | JsonException e) {
             logger.error("Failed to delete camera", e);
             ctx.status(500);
             ctx.result("Failed to delete camera");
@@ -1345,8 +1407,7 @@ public class RequestHandler {
     public static void onActivateMatchedCameraRequest(Context ctx) {
         logger.info(ctx.queryString());
         try {
-            CommonCameraUniqueName request =
-                    kObjectMapper.readValue(ctx.body(), CommonCameraUniqueName.class);
+            CommonCameraUniqueName request = ctx.bodyAsClass(CommonCameraUniqueName.class);
 
             if (VisionSourceManager.getInstance()
                     .reactivateDisabledCameraConfig(request.cameraUniqueName)) {
@@ -1354,7 +1415,7 @@ public class RequestHandler {
             } else {
                 ctx.status(403);
             }
-        } catch (IOException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(401);
             logger.error("Failed to process activate matched camera request", e);
             ctx.result("Failed to process activate matched camera request");
@@ -1362,14 +1423,14 @@ public class RequestHandler {
         }
     }
 
-    private record AssignUnmatchedCamera(PVCameraInfo cameraInfo) {}
+    @Json
+    record AssignUnmatchedCamera(PVCameraInfo cameraInfo) {}
 
     public static void onAssignUnmatchedCameraRequest(Context ctx) {
         logger.info(ctx.queryString());
 
         try {
-            AssignUnmatchedCamera request =
-                    kObjectMapper.readValue(ctx.body(), AssignUnmatchedCamera.class);
+            AssignUnmatchedCamera request = ctx.bodyAsClass(AssignUnmatchedCamera.class);
 
             if (request.cameraInfo == null) {
                 ctx.status(400);
@@ -1385,7 +1446,7 @@ public class RequestHandler {
             }
 
             ctx.result("Successfully assigned camera: " + request.cameraInfo);
-        } catch (IOException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(401);
             logger.error("Failed to process assign unmatched camera request", e);
             ctx.result("Failed to process assign unmatched camera request");
@@ -1396,15 +1457,14 @@ public class RequestHandler {
     public static void onUnassignCameraRequest(Context ctx) {
         logger.info(ctx.queryString());
         try {
-            CommonCameraUniqueName request =
-                    kObjectMapper.readValue(ctx.body(), CommonCameraUniqueName.class);
+            CommonCameraUniqueName request = ctx.bodyAsClass(CommonCameraUniqueName.class);
 
             if (VisionSourceManager.getInstance().deactivateVisionSource(request.cameraUniqueName)) {
                 ctx.status(200);
             } else {
                 ctx.status(403);
             }
-        } catch (IOException e) {
+        } catch (IllegalStateException | JsonException e) {
             ctx.status(401);
             logger.error("Failed to process unassign camera request", e);
             ctx.result("Failed to process unassign camera request");

@@ -24,71 +24,28 @@
 
 #include "photon/PhotonCamera.h"
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include <frc/Errors.h>
-#include <frc/RobotController.h>
-#include <frc/Timer.h>
-#include <hal/FRCUsageReporting.h>
 #include <net/TimeSyncServer.h>
 #include <opencv2/core.hpp>
-#include <opencv2/core/mat.hpp>
-#include <wpi/json.h>
+#include <opencv2/core/utility.hpp>
+#include <wpi/system/Errors.hpp>
+#include <wpi/system/RobotController.hpp>
+#include <wpi/system/Timer.hpp>
+#include <wpi/system/WPILibVersion.hpp>
+#include <wpi/util/UsageReporting.hpp>
+#include <wpi/util/json.hpp>
+#include <wpi/util/string.hpp>
 
 #include "PhotonVersion.h"
-#include "opencv2/core/utility.hpp"
 #include "photon/dataflow/structures/Packet.h"
 
-static constexpr units::second_t WARN_DEBOUNCE_SEC = 5_s;
-static constexpr units::second_t HEARTBEAT_DEBOUNCE_SEC = 500_ms;
-
-inline void verifyDependencies() {
-  if (!(std::string_view{cv::getVersionString()} ==
-        std::string_view{photon::PhotonVersion::opencvTargetVersion})) {
-    std::string bfw =
-        "\n\n\n\n\n"
-        ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
-        ">>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-        ">>>                                          \n"
-        ">>> You are running an incompatible version  \n"
-        ">>> of PhotonVision !                        \n"
-        ">>>                                          \n"
-        ">>> PhotonLib ";
-    bfw += photon::PhotonVersion::versionString;
-    bfw += " is built for OpenCV ";
-    bfw += photon::PhotonVersion::opencvTargetVersion;
-    bfw +=
-        "\n"
-        ">>> but you are using OpenCV ";
-    bfw += cv::getVersionString();
-    bfw +=
-        "\n>>>                                          \n"
-        ">>> This is neither tested nor supported.    \n"
-        ">>> You MUST update WPILib, PhotonLib, or both.\n"
-        ">>> Check `./gradlew dependencies` and ensure\n"
-        ">>> all mentions of OpenCV match the version \n"
-        ">>> that PhotonLib was built for. If you find a"
-        ">>> a mismatched version in a dependency, you\n"
-        ">>> must take steps to update the version of \n"
-        ">>> OpenCV used in that dependency. If you do\n"
-        ">>> not control that dependency and an updated\n"
-        ">>> version is not available, contact the    \n"
-        ">>> developers of that dependency.           \n"
-        ">>>                                          \n"
-        ">>> Your code will now crash.                \n"
-        ">>> We hope your day gets better.            \n"
-        ">>>                                          \n"
-        ">>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-        ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n";
-
-    FRC_ReportWarning(bfw);
-    FRC_ReportError(frc::err::Error, bfw);
-    throw new std::runtime_error(std::string{bfw});
-  }
-}
+static constexpr wpi::units::second_t WARN_DEBOUNCE_SEC = 5_s;
+static constexpr wpi::units::second_t HEARTBEAT_DEBOUNCE_SEC = 500_ms;
 
 // bit of a hack -- start a TimeSync server on port 5810 (hard-coded). We want
 // to avoid calling this from static initialization
@@ -108,7 +65,7 @@ static void InitTspServer() {
 
 namespace photon {
 
-constexpr const units::second_t VERSION_CHECK_INTERVAL = 5_s;
+constexpr const wpi::units::second_t VERSION_CHECK_INTERVAL = 5_s;
 static const std::vector<std::string_view> PHOTON_PREFIX = {"/photonvision/"};
 static const std::string PHOTON_ALERT_GROUP{"PhotonAlerts"};
 bool PhotonCamera::VERSION_CHECK_ENABLED = true;
@@ -121,7 +78,7 @@ static const std::string TYPE_STRING =
     std::string{"photonstruct:PhotonPipelineResult:"} +
     std::string{SerdeType<PhotonPipelineResult>::GetSchemaHash()};
 
-PhotonCamera::PhotonCamera(nt::NetworkTableInstance instance,
+PhotonCamera::PhotonCamera(wpi::nt::NetworkTableInstance instance,
                            const std::string_view cameraName)
     : mainTable(instance.GetTable("photonvision")),
       rootTable(mainTable->GetSubTable(cameraName)),
@@ -156,28 +113,33 @@ PhotonCamera::PhotonCamera(nt::NetworkTableInstance instance,
       fpsLimitSubscriber(rootTable->GetIntegerTopic("fpsLimit").Subscribe(-1)),
       fpsLimitPublisher(
           rootTable->GetIntegerTopic("fpsLimitRequest").Publish()),
+      enabledSubscriber(rootTable->GetBooleanTopic("enabled").Subscribe(true)),
+      enabledPublisher(rootTable->GetBooleanTopic("enabledRequest").Publish()),
       heartbeatSubscriber(
           rootTable->GetIntegerTopic("heartbeat").Subscribe(-1)),
       topicNameSubscriber(instance, PHOTON_PREFIX, {.topicsOnly = true}),
       path(rootTable->GetPath()),
       cameraName(cameraName),
       disconnectAlert(PHOTON_ALERT_GROUP,
+                      "disconnected-" + std::to_string(InstanceCount),
                       std::string{"PhotonCamera '"} + std::string{cameraName} +
                           "' is disconnected.",
-                      frc::Alert::AlertType::kWarning),
-      timesyncAlert(PHOTON_ALERT_GROUP, "", frc::Alert::AlertType::kWarning) {
-  verifyDependencies();
-  HAL_Report(HALUsageReporting::kResourceType_PhotonCamera, InstanceCount);
+                      wpi::util::Alert::Level::MEDIUM),
+      timesyncAlert(PHOTON_ALERT_GROUP,
+                    "timesync-" + std::to_string(InstanceCount), "",
+                    wpi::util::Alert::Level::MEDIUM) {
   InstanceCount++;
+  wpi::util::ReportUsage("PhotonVision/PhotonCamera",
+                         std::to_string(InstanceCount));
 
   // The Robot class is actually created here:
-  // https://github.com/wpilibsuite/allwpilib/blob/811b1309683e930a1ce69fae818f943ff161b7a5/wpilibc/src/main/native/include/frc/RobotBase.h#L33
+  // https://github.com/wpilibsuite/allwpilib/blob/811b1309683e930a1ce69fae818f943ff161b7a5/wpilibc/src/main/native/include/wpi/opmode/RobotBase.hpp#L33
   // so we should be fine to call this from the ctor
   InitTspServer();
 }
 
 PhotonCamera::PhotonCamera(const std::string_view cameraName)
-    : PhotonCamera(nt::NetworkTableInstance::GetDefault(), cameraName) {}
+    : PhotonCamera(wpi::nt::NetworkTableInstance::GetDefault(), cameraName) {}
 
 PhotonPipelineResult PhotonCamera::GetLatestResult() {
   if (test) {
@@ -191,8 +153,8 @@ PhotonPipelineResult PhotonCamera::GetLatestResult() {
   VerifyVersion();
 
   // Fill the packet with latest data and populate result.
-  units::microsecond_t now =
-      units::microsecond_t(frc::RobotController::GetFPGATime());
+  wpi::units::nanosecond_t now =
+      wpi::units::nanosecond_t(wpi::RobotController::GetMonotonicTime());
   const auto value = rawBytesEntry.Get();
   if (!value.size()) return PhotonPipelineResult{};
 
@@ -224,7 +186,7 @@ std::vector<PhotonPipelineResult> PhotonCamera::GetAllUnreadResults() {
   ret.reserve(changes.size());
 
   for (size_t i = 0; i < changes.size(); i++) {
-    const nt::Timestamped<std::vector<uint8_t>>& value = changes[i];
+    const wpi::nt::Timestamped<std::vector<uint8_t>>& value = changes[i];
 
     if (!value.value.size() || value.time == 0) {
       continue;
@@ -238,7 +200,7 @@ std::vector<PhotonPipelineResult> PhotonCamera::GetAllUnreadResults() {
 
     // TODO: NT4 timestamps are still not to be trusted. But it's the best we
     // can do until we can make time sync more reliable.
-    result.SetReceiveTimestamp(units::microsecond_t(value.time) -
+    result.SetReceiveTimestamp(wpi::units::nanosecond_t(value.time) -
                                result.GetLatency());
 
     ret.push_back(result);
@@ -252,21 +214,21 @@ void PhotonCamera::UpdateDisconnectAlert() {
 }
 
 void PhotonCamera::CheckTimeSyncOrWarn(photon::PhotonPipelineResult& result) {
-  if (result.metadata.timeSinceLastPong > 5L * 1000000L) {
+  if (result.metadata.timeSinceLastPong > INT64_C(5) * 1000000000L) {
     std::string warningText =
         "PhotonVision coprocessor at path " + path +
         " is not connected to the TimeSyncServer? It's been " +
-        std::to_string(result.metadata.timeSinceLastPong / 1e6) +
+        std::to_string(result.metadata.timeSinceLastPong / 1e9) +
         "s since the coprocessor last heard a pong.";
 
     timesyncAlert.SetText(warningText);
     timesyncAlert.Set(true);
 
-    if (frc::Timer::GetFPGATimestamp() <
+    if (wpi::Timer::GetMonotonicTimestamp() >
         (prevTimeSyncWarnTime + WARN_DEBOUNCE_SEC)) {
-      prevTimeSyncWarnTime = frc::Timer::GetFPGATimestamp();
+      prevTimeSyncWarnTime = wpi::Timer::GetMonotonicTimestamp();
 
-      FRC_ReportWarning(
+      WPILIB_ReportWarning(
           warningText +
           "\n\nCheck /photonvision/.timesync/{{COPROCESSOR_HOSTNAME}} for more "
           "information.");
@@ -289,6 +251,10 @@ int PhotonCamera::GetFPSLimit() const { return fpsLimitSubscriber.Get(); }
 void PhotonCamera::SetFPSLimit(int fpsLimit) {
   fpsLimitPublisher.Set(fpsLimit);
 }
+
+bool PhotonCamera::GetEnabled() const { return enabledSubscriber.Get(); }
+
+void PhotonCamera::SetEnabled(bool enabled) { enabledPublisher.Set(enabled); }
 
 void PhotonCamera::TakeInputSnapshot() {
   inputSaveImgEntry.Set(inputSaveImgSubscriber.Get() + 1);
@@ -318,7 +284,7 @@ const std::string_view PhotonCamera::GetCameraName() const {
 
 bool PhotonCamera::IsConnected() {
   auto currentHeartbeat = heartbeatSubscriber.Get();
-  auto now = frc::Timer::GetFPGATimestamp();
+  auto now = wpi::Timer::GetMonotonicTimestamp();
 
   if (currentHeartbeat < 0) {
     // we have never heard from the camera
@@ -366,10 +332,10 @@ void PhotonCamera::VerifyVersion() {
     return;
   }
 
-  if ((frc::Timer::GetFPGATimestamp() - lastVersionCheckTime) <
+  if ((wpi::Timer::GetMonotonicTimestamp() - lastVersionCheckTime) <
       VERSION_CHECK_INTERVAL)
     return;
-  this->lastVersionCheckTime = frc::Timer::GetFPGATimestamp();
+  this->lastVersionCheckTime = wpi::Timer::GetMonotonicTimestamp();
 
   const std::string& versionString = versionEntry.Get("");
   if (versionString.empty()) {
@@ -377,13 +343,13 @@ void PhotonCamera::VerifyVersion() {
     std::vector<std::string> cameraNames =
         rootTable->GetInstance().GetTable("photonvision")->GetSubTables();
     if (cameraNames.empty()) {
-      FRC_ReportError(frc::warn::Warning,
-                      "Could not find any PhotonVision coprocessors on "
-                      "NetworkTables. Double check that PhotonVision is "
-                      "running, and that your camera is connected!");
+      WPILIB_ReportError(wpi::warn::Warning,
+                         "Could not find any PhotonVision coprocessors on "
+                         "NetworkTables. Double check that PhotonVision is "
+                         "running, and that your camera is connected!");
     } else {
-      FRC_ReportError(
-          frc::warn::Warning,
+      WPILIB_ReportError(
+          wpi::warn::Warning,
           "PhotonVision coprocessor at path {} not found on NetworkTables. "
           "Double check that your camera names match!",
           path_);
@@ -392,8 +358,8 @@ void PhotonCamera::VerifyVersion() {
       for (unsigned int i = 0; i < cameraNames.size(); i++) {
         cameraNameOutString += ("\n" + cameraNames[i]);
       }
-      FRC_ReportError(
-          frc::warn::Warning,
+      WPILIB_ReportError(
+          wpi::warn::Warning,
           "Found the following PhotonVision cameras on NetworkTables:\n{}",
           cameraNameOutString);
     }
@@ -401,12 +367,12 @@ void PhotonCamera::VerifyVersion() {
     std::string local_uuid{SerdeType<PhotonPipelineResult>::GetSchemaHash()};
 
     // implicit conversion here might throw an exception, so be careful of that
-    wpi::json remote_uuid_json =
+    wpi::util::json remote_uuid_json =
         rawBytesEntry.GetTopic().GetProperty("message_uuid");
     if (!remote_uuid_json.is_string()) {
-      FRC_ReportError(frc::warn::Warning,
-                      "Cannot find property message_uuid for PhotonCamera {}",
-                      path);
+      WPILIB_ReportError(
+          wpi::warn::Warning,
+          "Cannot find property message_uuid for PhotonCamera {}", path);
       return;
     }
     std::string remote_uuid{remote_uuid_json};
@@ -430,12 +396,12 @@ void PhotonCamera::VerifyVersion() {
           ">>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
           ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
           "\n\n";
-      FRC_ReportWarning(bfw);
-      std::string error_str = fmt::format(
+      WPILIB_ReportWarning(bfw);
+      std::string error_str = std::format(
           "Photonlib version {} (message definition version {}) does not match "
           "coprocessor version {} (message definition version {})!",
           PhotonVersion::versionString, local_uuid, versionString, remote_uuid);
-      FRC_ReportError(frc::err::Error, "{}", error_str);
+      WPILIB_ReportError(wpi::err::Error, "{}", error_str);
       throw std::runtime_error(error_str);
     }
   }

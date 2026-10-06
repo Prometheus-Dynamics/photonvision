@@ -17,19 +17,18 @@
 
 package org.photonvision.common.util.math;
 
-import edu.wpi.first.apriltag.AprilTagPoseEstimate;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.geometry.CoordinateSystem;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Transform3d;
-import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.math.util.Units;
-import edu.wpi.first.networktables.NetworkTablesJNI;
 import java.util.Arrays;
 import java.util.List;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.wpilib.math.geometry.CoordinateSystem;
+import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Transform3d;
+import org.wpilib.math.geometry.Translation3d;
+import org.wpilib.math.linalg.VecBuilder;
+import org.wpilib.math.util.Units;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimate;
 
 public class MathUtils {
     MathUtils() {}
@@ -95,10 +94,6 @@ public class MathUtils {
 
     public static int map(int value, int inMin, int inMax, int outMin, int outMax) {
         return (int) Math.floor(map((double) value, inMin, inMax, outMin, outMax) + 0.5);
-    }
-
-    public static long wpiNanoTime() {
-        return microsToNanos(NetworkTablesJNI.now());
     }
 
     /**

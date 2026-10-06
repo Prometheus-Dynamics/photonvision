@@ -23,7 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.NoSuchElementException;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.configuration.NetworkConfig;
 import org.photonvision.common.dataflow.DataChangeDestination;
 import org.photonvision.common.dataflow.DataChangeService;
@@ -89,7 +89,7 @@ public class NetworkManager {
         }
 
         var physicalDevices = NetworkUtils.getAllActiveWiredInterfaces();
-        var config = ConfigManager.getInstance().getConfig().getNetworkConfig();
+        var config = ConfigProvider.getInstance().getConfig().getNetworkConfig();
         if (physicalDevices.stream()
                 .noneMatch(it -> (it.devName().equals(config.networkManagerIface)))) {
             try {
@@ -100,7 +100,7 @@ public class NetworkManager {
                                 + iFace.devName());
                 // update NetworkConfig with found interface
                 config.networkManagerIface = iFace.devName();
-                ConfigManager.getInstance().requestSave();
+                ConfigProvider.getInstance().requestSave();
             } catch (NoSuchElementException e) {
                 // if there are no available interfaces, go with the one from settings
                 logger.warn("No physical interface found. Maybe ethernet isn't connected?");
@@ -135,7 +135,7 @@ public class NetworkManager {
     }
 
     public void reinitialize() {
-        initialize(ConfigManager.getInstance().getConfig().getNetworkConfig().shouldManage);
+        initialize(ConfigProvider.getInstance().getConfig().getNetworkConfig().shouldManage);
 
         DataChangeService.getInstance()
                 .publishEvent(
@@ -223,9 +223,10 @@ public class NetworkManager {
             return;
         }
 
-        // guess at the gateway from the staticIp
+        // Default gateway handed out by the VH-109 DHCP server is 10.TE.AM.4
+        // https://docs.wpilib.org/en/stable/docs/networking/networking-introduction/ip-configurations.html#on-the-field-dhcp-configuration
         String[] parts = config.staticIp.split("\\.");
-        parts[parts.length - 1] = "1";
+        parts[parts.length - 1] = "4";
         String gateway = String.join(".", parts);
 
         var shell = new ShellExec();

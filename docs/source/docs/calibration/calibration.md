@@ -7,7 +7,7 @@ In order to detect AprilTags and use 3D mode, your camera must be calibrated at 
 To calibrate a camera, images of a ChArUco board (or chessboard) are taken. By comparing where the grid corners should be in object space (for example, a corner once every inch in an 8x6 grid) with where they appear in the camera image, we can find a least-squares estimate for intrinsic camera properties like focal lengths, center point, and distortion coefficients. For more on camera calibration, please review the [OpenCV documentation](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html).
 
 :::{warning}
-While any resolution can be calibrated, higher resolutions may be too performance-intensive for some coprocessors to handle. Therefore, we recommend experimenting to see what works best for your coprocessor.
+PhotonVision supports many resolution configuration options, with only a minimum of 640x480 required. However, higher resolutions may be too performance-intensive for some coprocessors to handle. Therefore, we recommend experimenting to see what works best for your coprocessor.
 :::
 
 :::{note}
@@ -84,7 +84,7 @@ Now, we'll capture images of our board from various angles. It's important to ch
 Details about a particular calibration can be viewed by clicking on that resolution in the calibrations tab. This tab allows you to download raw calibration data, upload a previous calibration, and inspect details about calculated camera intrinsic.
 
 ```{image} images/cal-details.png
-:alt: Captured calibration images
+:alt: Calibration overview
 :width: 600
 ```
 
@@ -98,7 +98,21 @@ More info on what these parameters mean can be found in [OpenCV's docs](https://
 - FOV: calculated using estimated focal length and image size. Useful for gut-checking calibration results
 - Mean Err: Mean reprojection error, or distance between expected and observed chessboard cameras for the full calibration dataset
 
-Below these outputs are the snapshots collected for calibration, along with a per-snapshot mean reprojection error. A snapshot with a larger reprojection error might indicate a bad snapshot, due to effects such as motion blur or misidentified chessboard corners.
+The "observations" tab shows snapshots, along with a per-snapshot mean reprojection error. A snapshot with a larger reprojection error might indicate a bad snapshot, due to effects such as motion blur or misidentified chessboard corners. Corners marked green were used in the final solve, while red corners were marked as outliers. ChArUco boards may have some corners entirely undetected -- these are not marked.
+
+```{image} images/cal-outliers.png
+:alt: Calibration outliers and inliners
+:width: 600
+```
+
+The "uncertainty" tab shows camera [projection uncertainty](https://mrcal.secretsauce.net/uncertainty.html) estimation. The contour map shows how much you can trust your camera calibration at each spot in the frame. The uncertainty is expected error in pixels, if you use the calibration to project a 3D point onto that pixel. Expect that the edges of the image will have higher uncertainty than the middle of the image. Review the mrcal documentation for examples of "good" and "bad".
+
+This tool only measures sampling error — noise from imperfect corner detection. It does not catch model errors, like using the wrong lens model or blurry images. If your calibration has those problems, the map will look optimistically good even when the calibration is actually bad. A good calibration will have a clean uncertainty map, but a bad calibration can have one too.
+
+```{image} images/cal-uncertainty.png
+:alt: Calibration outliers and inliers
+:width: 600
+```
 
 Calibration images can also be extracted from the downloaded JSON file using [this Python script](https://raw.githubusercontent.com/PhotonVision/photonvision/main/devTools/calibrationUtils.py). This script will unpack calibration images, and also generate a VNL file for use [with mrcal](https://mrcal.secretsauce.net/).
 

@@ -5,17 +5,27 @@ ext {
 apply plugin: 'cpp'
 apply plugin: 'c'
 apply plugin: 'google-test-test-suite'
-apply plugin: 'edu.wpi.first.NativeUtils'
+apply plugin: 'org.wpilib.NativeUtils'
 apply plugin: 'org.photonvision.tools.WpilibTools'
-apply plugin: 'edu.wpi.first.GradleJni'
+apply plugin: 'org.wpilib.GradleJni'
 
 ext.licenseFile = file("$rootDir/LICENSE")
 apply from: "${rootDir}/shared/config.gradle"
 apply from: "${rootDir}/shared/javacommon.gradle"
 
-apply from: "${rootDir}/versioningHelper.gradle"
-
 nativeUtils {
+    nativeDependencyContainer {
+        mrclib_sconly(getNativeDependencyTypeClass('WPISharedMavenDependency')) {
+            groupId = "org.wpilib.mrclib"
+            artifactId = "mrclib-cpp"
+            headerClassifier = "headers"
+            ext = "zip"
+            version = mrclibVersion
+            skipAtRuntimePlatforms.add(nativeUtils.wpi.platforms.systemcore)
+            targetPlatforms.add(nativeUtils.wpi.platforms.systemcore)
+            noDebugSplit = true
+        }
+    }
     exportsConfigs {
         "${nativeName}" {}
     }
@@ -52,21 +62,25 @@ model {
                 it.tasks.withType(CppCompile) {
                     it.dependsOn generateProto
                 }
+                if (it.targetPlatform.name == nativeUtils.wpi.platforms.systemcore) {
+                    nativeUtils.useRequiredLibrary(it, "mrclib_sconly")
+                }
             }
 
             nativeUtils.useRequiredLibrary(it, "wpiutil_shared")
+            nativeUtils.useRequiredLibrary(it, "datalog_shared")
             nativeUtils.useRequiredLibrary(it, "wpimath_shared")
             nativeUtils.useRequiredLibrary(it, "wpinet_shared")
             nativeUtils.useRequiredLibrary(it, "ntcore_shared")
             nativeUtils.useRequiredLibrary(it, "apriltag_shared")
+            nativeUtils.useRequiredLibrary(it, "fields_shared")
             nativeUtils.useRequiredLibrary(it, "opencv_shared")
         }
         "${nativeName}JNI"(JniNativeLibrarySpec) {
 
             enableCheckTask project.hasProperty('doJniCheck')
             javaCompileTasks << compileJava
-            jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.roborio)
-            jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.linuxarm32)
+            jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.systemcore)
             jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.linuxarm64)
 
             sources {
@@ -83,6 +97,7 @@ model {
             }
 
             nativeUtils.useRequiredLibrary(it, "wpiutil_shared")
+            nativeUtils.useRequiredLibrary(it, "datalog_shared")
             nativeUtils.useRequiredLibrary(it, "wpimath_shared")
             nativeUtils.useRequiredLibrary(it, "wpinet_shared")
             nativeUtils.useRequiredLibrary(it, "ntcore_shared")
@@ -116,11 +131,16 @@ model {
                 it.tasks.withType(CppCompile) {
                     it.dependsOn generateProto
                 }
+                if (it.targetPlatform.name == nativeUtils.wpi.platforms.systemcore) {
+                    nativeUtils.useRequiredLibrary(it, "mrclib_sconly")
+                }
             }
 
-            nativeUtils.useRequiredLibrary(it, "wpilib_executable_shared")
-            nativeUtils.useRequiredLibrary(it, "googletest_static")
+            nativeUtils.useRequiredLibrary(it, "wpilib_shared")
+            nativeUtils.useRequiredLibrary(it, "catch2_static")
+            nativeUtils.useRequiredLibrary(it, "datalog_shared")
             nativeUtils.useRequiredLibrary(it, "apriltag_shared")
+            nativeUtils.useRequiredLibrary(it, "fields_shared")
             nativeUtils.useRequiredLibrary(it, "cscore_shared")
             nativeUtils.useRequiredLibrary(it, "opencv_shared")
         }
@@ -157,6 +177,14 @@ model {
     }
 }
 
+tasks.matching { it.name.startsWith('check') && it.name.contains('GoogleTestExe') }.configureEach {
+    timeout = java.time.Duration.ofMinutes(10)
+}
+
+test {
+    timeout = java.time.Duration.ofMinutes(10)
+}
+
 apply from: "${rootDir}/shared/javacpp/publish.gradle"
 
 // Add photon serde headers to our published sources
@@ -167,7 +195,7 @@ cppHeadersZip {
 }
 
 // setup wpilib bundled native libs
-wpilibTools.deps.wpilibVersion = wpi.versions.wpilibVersion.get()
+wpilibTools.deps.wpilibVersion = wpilibVersion
 
 def nativeConfigName = 'wpilibNatives'
 def nativeConfig = configurations.create(nativeConfigName)
@@ -179,10 +207,14 @@ def nativeTasks = wpilibTools.createExtractionTasks {
 nativeTasks.addToSourceSetResources(sourceSets.test)
 
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpiutil")
+nativeConfig.dependencies.add wpilibTools.deps.wpilib("datalog")
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpimath")
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpinet")
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("ntcore")
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("hal")
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("cscore")
-nativeConfig.dependencies.add wpilibTools.deps.wpilibOpenCv("frc" + openCVYear, wpi.versions.opencvVersion.get())
+nativeConfig.dependencies.add wpilibTools.deps.wpilibOpenCv(openCVversion)
 nativeConfig.dependencies.add wpilibTools.deps.wpilib("apriltag")
+nativeConfig.dependencies.add wpilibTools.deps.wpilib("fields")
+nativeConfig.dependencies.add wpilibTools.deps.wpilib("telemetry")
+nativeConfig.dependencies.add wpilibTools.deps.wpilib("tunables")

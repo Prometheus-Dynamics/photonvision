@@ -20,36 +20,68 @@ package org.photonvision.common.configuration;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.avaje.jsonb.JsonType;
+import io.avaje.jsonb.Jsonb;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import org.apache.commons.io.FileUtils;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.photonvision.common.LoadJNI;
+import org.photonvision.common.logging.LogGroup;
+import org.photonvision.common.logging.LogLevel;
+import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.TestUtils;
+import org.photonvision.vision.opencv.CVMat;
 
 public class NetworkConfigTest {
-    @Test
-    public void testSerialization() throws IOException {
-        var mapper = new ObjectMapper();
-        var path = Path.of("netTest.json");
-        mapper.writeValue(path.toFile(), new NetworkConfig());
-        assertDoesNotThrow(() -> mapper.readValue(path.toFile(), NetworkConfig.class));
-        new File("netTest.json").delete();
+    @TempDir private Path tmpDir;
+
+    @BeforeAll
+    public static void init() {
+        LoadJNI.loadLibraries();
+        CVMat.enablePrint(false);
+
+        var logLevel = LogLevel.DEBUG;
+        Logger.setLevel(LogGroup.Camera, logLevel);
+        Logger.setLevel(LogGroup.WebServer, logLevel);
+        Logger.setLevel(LogGroup.VisionModule, logLevel);
+        Logger.setLevel(LogGroup.Data, logLevel);
+        Logger.setLevel(LogGroup.Config, logLevel);
+        Logger.setLevel(LogGroup.General, logLevel);
     }
 
     @Test
-    public void testDeserializeTeamNumberOrNtServerAddress() {
-        {
-            var folder = TestUtils.getResourcesFolderPath(true).resolve("network-old-team-number");
-            var configMgr = new ConfigManager(folder, new LegacyConfigProvider(folder));
-            configMgr.load();
-            assertEquals("9999", configMgr.getConfig().getNetworkConfig().ntServerAddress);
+    public void testSerialization() throws IOException {
+        Path path = tmpDir.resolve("netTest.json");
+        JsonType<NetworkConfig> jsonb = Jsonb.instance().type(NetworkConfig.class);
+        try (var outputStream = new FileOutputStream(path.toFile())) {
+            jsonb.toJson(new NetworkConfig(), outputStream);
         }
-        {
-            var folder = TestUtils.getResourcesFolderPath(true).resolve("network-new-team-number");
-            var configMgr = new ConfigManager(folder, new LegacyConfigProvider(folder));
-            configMgr.load();
-            assertEquals("9999", configMgr.getConfig().getNetworkConfig().ntServerAddress);
+        try (var inputStream = new FileInputStream(path.toFile())) {
+            assertDoesNotThrow(() -> jsonb.fromJson(inputStream));
         }
+        new File("netTest.json").delete();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"'network-team-number','9999'", "'network-ip-addr','127.0.0.1'"})
+    public void testDeserializeTeamNumber(String testSource, String expectedNtServerAddress)
+            throws IOException {
+        var testDatabase = tmpDir.resolve("photon.sqlite");
+        FileUtils.copyFile(
+                TestUtils.getResourcesFolderPath(false)
+                        .resolve(String.format("networkConfigTest/%s.sqlite", testSource))
+                        .toFile(),
+                testDatabase.toFile());
+        var configMgr = new ConfigProvider(tmpDir);
+        configMgr.load();
+        assertEquals(expectedNtServerAddress, configMgr.getConfig().getNetworkConfig().ntServerAddress);
     }
 }

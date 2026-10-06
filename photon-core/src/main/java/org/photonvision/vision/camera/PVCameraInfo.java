@@ -17,33 +17,26 @@
 
 package org.photonvision.vision.camera;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonGetter;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonSubTypes;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.annotation.JsonTypeName;
-import edu.wpi.first.cscore.UsbCameraInfo;
+import io.avaje.jsonb.Json;
 import java.util.Arrays;
 import java.util.Objects;
+import org.wpilib.vision.camera.UsbCameraInfo;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.WRAPPER_OBJECT)
-@JsonIgnoreProperties(ignoreUnknown = true)
-@JsonSubTypes({
-    @JsonSubTypes.Type(value = PVCameraInfo.PVUsbCameraInfo.class),
-    @JsonSubTypes.Type(value = PVCameraInfo.PVCSICameraInfo.class),
-    @JsonSubTypes.Type(value = PVCameraInfo.PVFileCameraInfo.class)
-})
+@Json(typeProperty = "type")
+@Json.SubType(type = PVCameraInfo.PVUsbCameraInfo.class)
+@Json.SubType(type = PVCameraInfo.PVCSICameraInfo.class)
+@Json.SubType(type = PVCameraInfo.PVFileCameraInfo.class)
 public sealed interface PVCameraInfo {
     /**
      * @return The path of the camera.
      */
+    @Json.Property("path")
     String path();
 
     /**
      * @return The base name of the camera aka the name as just ascii.
      */
+    @Json.Property("name")
     String name();
 
     /**
@@ -64,7 +57,7 @@ public sealed interface PVCameraInfo {
      *
      * @return The unique path of the camera
      */
-    @JsonGetter(value = "uniquePath")
+    @Json.Property("uniquePath")
     String uniquePath();
 
     String[] otherPaths();
@@ -82,16 +75,9 @@ public sealed interface PVCameraInfo {
         return this.equals((Object) other);
     }
 
-    @JsonTypeName("PVUsbCameraInfo")
     public static final class PVUsbCameraInfo extends UsbCameraInfo implements PVCameraInfo {
-        @JsonCreator
         public PVUsbCameraInfo(
-                @JsonProperty("dev") int dev,
-                @JsonProperty("path") String path,
-                @JsonProperty("name") String name,
-                @JsonProperty("otherPaths") String[] otherPaths,
-                @JsonProperty("vendorId") int vendorId,
-                @JsonProperty("productId") int productId) {
+                int dev, String path, String name, String[] otherPaths, int vendorId, int productId) {
             super(dev, path, name, otherPaths, vendorId, productId);
         }
 
@@ -135,7 +121,7 @@ public sealed interface PVCameraInfo {
             if (obj == null) return false;
             if (!(obj instanceof PVUsbCameraInfo info)) return false;
 
-            return super.name.equals(info.name)
+            return name().equals(info.name())
                     && super.vendorId == info.vendorId
                     && super.productId == info.productId
                     && uniquePath().equals(info.uniquePath());
@@ -168,14 +154,11 @@ public sealed interface PVCameraInfo {
         }
     }
 
-    @JsonTypeName("PVCSICameraInfo")
     public static final class PVCSICameraInfo implements PVCameraInfo {
         public final String path;
         public final String baseName;
 
-        @JsonCreator
-        public PVCSICameraInfo(
-                @JsonProperty("path") String path, @JsonProperty("baseName") String baseName) {
+        public PVCSICameraInfo(String path, String baseName) {
             this.path = path;
             this.baseName = baseName;
         }
@@ -233,13 +216,11 @@ public sealed interface PVCameraInfo {
         }
     }
 
-    @JsonTypeName("PVFileCameraInfo")
     public static final class PVFileCameraInfo implements PVCameraInfo {
         public final String path;
         public final String name;
 
-        @JsonCreator
-        public PVFileCameraInfo(@JsonProperty("path") String path, @JsonProperty("name") String name) {
+        public PVFileCameraInfo(String path, String name) {
             this.path = path;
             this.name = name;
         }

@@ -38,9 +38,10 @@ import org.photonvision.common.configuration.NeuralNetworkModelsSettings.ModelPr
 import org.photonvision.common.hardware.Platform;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
+import org.photonvision.tflite.TFLiteJNI.TFLiteSource;
 import org.photonvision.vision.objects.Model;
 import org.photonvision.vision.objects.RknnModel;
-import org.photonvision.vision.objects.RubikModel;
+import org.photonvision.vision.objects.TFLiteModel;
 
 /**
  * Manages the loading of neural network models.
@@ -280,10 +281,10 @@ public class NeuralNetworkModelManager {
      *
      * <p>If this method returns `Optional.of(..)` then the model should be safe to load.
      *
-     * @param modelUID the unique identifier of the model to retrieve
+     * @param modelPath the unique identifier of the model to retrieve
      * @return an Optional containing the model if found, or an empty Optional if not found
      */
-    public Optional<Model> getModel(String modelUID) {
+    public Optional<Model> getModel(Path modelPath) {
         if (models == null) {
             return Optional.empty();
         }
@@ -292,7 +293,7 @@ public class NeuralNetworkModelManager {
         for (Family backend : supportedBackends) {
             if (models.containsKey(backend)) {
                 Optional<Model> model =
-                        models.get(backend).stream().filter(m -> m.getUID().equals(modelUID)).findFirst();
+                        models.get(backend).stream().filter(m -> m.getPath().equals(modelPath)).findFirst();
                 if (model.isPresent()) {
                     return model;
                 }
@@ -318,7 +319,7 @@ public class NeuralNetworkModelManager {
         }
 
         ModelProperties properties =
-                ConfigManager.getInstance().getConfig().neuralNetworkPropertyManager().getModel(path);
+                ConfigProvider.getInstance().getConfig().getNeuralNetworkProperties().getModel(path);
 
         if (properties == null) {
             logger.warn(
@@ -330,9 +331,9 @@ public class NeuralNetworkModelManager {
 
                 // At this point this property is not serialized or known to our configuration. add to
                 // NeuralNetworkModelsSettings
-                ConfigManager.getInstance()
+                ConfigProvider.getInstance()
                         .getConfig()
-                        .neuralNetworkPropertyManager()
+                        .getNeuralNetworkProperties()
                         .addModelProperties(properties);
             } catch (IllegalArgumentException | IOException e) {
                 logger.error("Failed to translate legacy model filename to properties: " + path, e);
@@ -360,7 +361,7 @@ public class NeuralNetworkModelManager {
                     models.get(properties.family()).add(new RknnModel(properties));
                 }
                 case RUBIK -> {
-                    models.get(properties.family()).add(new RubikModel(properties));
+                    models.get(properties.family()).add(new TFLiteModel(properties, TFLiteSource.RUBIK));
                 }
             }
             logger.info(
@@ -382,7 +383,7 @@ public class NeuralNetworkModelManager {
     public void discoverModels() {
         logger.info("Supported backends: " + supportedBackends);
 
-        File modelsDirectory = ConfigManager.getInstance().getModelsDirectory();
+        File modelsDirectory = ConfigProvider.getInstance().getModelsDirectory();
 
         if (!modelsDirectory.exists()) {
             logger.error("Models folder " + modelsDirectory.getAbsolutePath() + " does not exist.");
@@ -406,7 +407,8 @@ public class NeuralNetworkModelManager {
         // After loading all of the models, sort them by name to ensure a consistent
         // ordering
         models.forEach(
-                (backend, backendModels) -> backendModels.sort((a, b) -> a.getUID().compareTo(b.getUID())));
+                (backend, backendModels) ->
+                        backendModels.sort((a, b) -> a.getPath().compareTo(b.getPath())));
 
         // Log
         StringBuilder sb = new StringBuilder();
@@ -414,7 +416,7 @@ public class NeuralNetworkModelManager {
         models.forEach(
                 (backend, backendModels) -> {
                     sb.append(backend).append(" [");
-                    backendModels.forEach(model -> sb.append(model.getUID()).append(", "));
+                    backendModels.forEach(model -> sb.append(model.getPath()).append(", "));
                     sb.append("] ");
                 });
     }
@@ -423,7 +425,7 @@ public class NeuralNetworkModelManager {
      * Extracts models from the JAR and copies them to disk. Also copies properties into the database.
      */
     public void extractModels() {
-        File modelsDirectory = ConfigManager.getInstance().getModelsDirectory();
+        File modelsDirectory = ConfigProvider.getInstance().getModelsDirectory();
 
         // Filter shippedProprties by supportedBackends
         NeuralNetworkModelsSettings supportedProperties = new NeuralNetworkModelsSettings();
@@ -482,15 +484,15 @@ public class NeuralNetworkModelManager {
         }
 
         // Combine with existing properties
-        ConfigManager.getInstance()
+        ConfigProvider.getInstance()
                 .getConfig()
                 .setNeuralNetworkProperties(
                         supportedProperties.sum(
-                                ConfigManager.getInstance().getConfig().neuralNetworkPropertyManager()));
+                                ConfigProvider.getInstance().getConfig().getNeuralNetworkProperties()));
     }
 
     public boolean clearModels() {
-        File modelsDirectory = ConfigManager.getInstance().getModelsDirectory();
+        File modelsDirectory = ConfigProvider.getInstance().getModelsDirectory();
 
         if (modelsDirectory.exists()) {
             try (Stream<Path> files = Files.walk(modelsDirectory.toPath())) {
@@ -511,7 +513,7 @@ public class NeuralNetworkModelManager {
         }
 
         // Delete model info
-        return ConfigManager.getInstance().getConfig().neuralNetworkPropertyManager().clear();
+        return ConfigProvider.getInstance().getConfig().getNeuralNetworkProperties().clear();
     }
 
     public File exportSingleModel(String modelPath) {
@@ -523,9 +525,9 @@ public class NeuralNetworkModelManager {
             }
 
             ModelProperties properties =
-                    ConfigManager.getInstance()
+                    ConfigProvider.getInstance()
                             .getConfig()
-                            .neuralNetworkPropertyManager()
+                            .getNeuralNetworkProperties()
                             .getModel(Path.of(modelPath));
 
             String fileName = "";

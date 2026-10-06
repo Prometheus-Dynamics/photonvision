@@ -17,10 +17,6 @@
 
 package org.photonvision.vision.pipe.impl;
 
-import edu.wpi.first.apriltag.AprilTagDetection;
-import edu.wpi.first.apriltag.AprilTagPoseEstimate;
-import edu.wpi.first.apriltag.AprilTagPoseEstimator;
-import edu.wpi.first.apriltag.AprilTagPoseEstimator.Config;
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -28,15 +24,17 @@ import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.calibration.CameraLensModel;
-import org.photonvision.vision.opencv.Releasable;
 import org.photonvision.vision.pipe.CVPipe;
+import org.wpilib.vision.apriltag.AprilTagDetection;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimate;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimator;
+import org.wpilib.vision.apriltag.AprilTagPoseEstimator.Config;
 
 public class AprilTagPoseEstimatorPipe
         extends CVPipe<
                 AprilTagDetection,
                 AprilTagPoseEstimate,
-                AprilTagPoseEstimatorPipe.AprilTagPoseEstimatorPipeParams>
-        implements Releasable {
+                AprilTagPoseEstimatorPipe.AprilTagPoseEstimatorPipeParams> {
     private final AprilTagPoseEstimator m_poseEstimator =
             new AprilTagPoseEstimator(new AprilTagPoseEstimator.Config(0, 0, 0, 0, 0));
 
@@ -44,7 +42,7 @@ public class AprilTagPoseEstimatorPipe
         super();
     }
 
-    MatOfPoint2f temp = new MatOfPoint2f();
+    MatOfPoint2f cornersMat = new MatOfPoint2f();
 
     @Override
     protected AprilTagPoseEstimate process(AprilTagDetection in) {
@@ -54,14 +52,14 @@ public class AprilTagPoseEstimatorPipe
             corners[i] = new Point(in.getCornerX(i), in.getCornerY(i));
         }
         // And shove into our matofpoints
-        temp.fromArray(corners);
+        cornersMat.fromArray(corners);
 
         // Probably overwrites what was in temp before. I hope
         if (params.calibration().lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE) {
             Mat identity = Mat.eye(3, 3, CvType.CV_64F);
             Calib3d.fisheye_undistortPoints(
-                    temp,
-                    temp,
+                    cornersMat,
+                    cornersMat,
                     params.calibration().getCameraIntrinsicsMat(),
                     params.calibration().getDistCoeffsMat(),
                     identity,
@@ -69,14 +67,14 @@ public class AprilTagPoseEstimatorPipe
             identity.release();
         } else {
             Calib3d.undistortImagePoints(
-                    temp,
-                    temp,
+                    cornersMat,
+                    cornersMat,
                     params.calibration().getCameraIntrinsicsMat(),
                     params.calibration().getDistCoeffsMat());
         }
 
         // Save out undistorted corners
-        corners = temp.toArray();
+        corners = cornersMat.toArray();
 
         // Apriltagdetection expects an array in form [x1 y1 x2 y2 ...]
         var fixedCorners = new double[8];
@@ -111,7 +109,7 @@ public class AprilTagPoseEstimatorPipe
 
     @Override
     public void release() {
-        temp.release();
+        cornersMat.release();
     }
 
     public static record AprilTagPoseEstimatorPipeParams(

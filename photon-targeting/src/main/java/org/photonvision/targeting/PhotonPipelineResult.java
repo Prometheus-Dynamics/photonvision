@@ -17,7 +17,6 @@
 
 package org.photonvision.targeting;
 
-import edu.wpi.first.util.protobuf.ProtobufSerializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +24,7 @@ import org.photonvision.common.dataflow.structures.PacketSerde;
 import org.photonvision.struct.PhotonPipelineResultSerde;
 import org.photonvision.targeting.proto.PhotonPipelineResultProto;
 import org.photonvision.targeting.serde.PhotonStructSerializable;
+import org.wpilib.util.protobuf.ProtobufSerializable;
 
 /** Represents a pipeline result from a PhotonCamera. */
 public class PhotonPipelineResult
@@ -49,22 +49,22 @@ public class PhotonPipelineResult
      * Constructs a pipeline result.
      *
      * @param sequenceID The number of frames processed by this camera since boot
-     * @param captureTimestampMicros The time, in uS in the coprocessor's timebase, that the
+     * @param captureTimestampNanos The time, in nS in the coprocessor's timebase, that the
      *     coprocessor captured the image this result contains the targeting info of
-     * @param publishTimestampMicros The time, in uS in the coprocessor's timebase, that the
+     * @param publishTimestampNanos The time, in nS in the coprocessor's timebase, that the
      *     coprocessor published targeting info
-     * @param timeSinceLastPong The time since the last Time Sync Pong in uS.
+     * @param timeSinceLastPong The time since the last Time Sync Pong in nS.
      * @param targets The list of targets identified by the pipeline.
      */
     public PhotonPipelineResult(
             long sequenceID,
-            long captureTimestampMicros,
-            long publishTimestampMicros,
+            long captureTimestampNanos,
+            long publishTimestampNanos,
             long timeSinceLastPong,
             List<PhotonTrackedTarget> targets) {
         this(
                 new PhotonPipelineMetadata(
-                        captureTimestampMicros, publishTimestampMicros, sequenceID, timeSinceLastPong),
+                        captureTimestampNanos, publishTimestampNanos, sequenceID, timeSinceLastPong),
                 targets,
                 Optional.empty());
     }
@@ -73,11 +73,11 @@ public class PhotonPipelineResult
      * Constructs a pipeline result.
      *
      * @param sequenceID The number of frames processed by this camera since boot
-     * @param captureTimestamp The time, in uS in the coprocessor's timebase, that the coprocessor
+     * @param captureTimestamp The time, in nS in the coprocessor's timebase, that the coprocessor
      *     captured the image this result contains the targeting info of
-     * @param publishTimestamp The time, in uS in the coprocessor's timebase, that the coprocessor
+     * @param publishTimestamp The time, in nS in the coprocessor's timebase, that the coprocessor
      *     published targeting info
-     * @param timeSinceLastPong The time since the last Time Sync Pong in uS.
+     * @param timeSinceLastPong The time since the last Time Sync Pong in nS.
      * @param targets The list of targets identified by the pipeline.
      * @param result Result from multi-target PNP.
      */
@@ -168,14 +168,14 @@ public class PhotonPipelineResult
     }
 
     /**
-     * Returns the estimated time the frame was taken, in the Time Sync Server's time base (nt::Now).
-     * This is calculated using the estimated offset between Time Sync Server time and local time. The
-     * robot shall run a server, so the offset shall be 0.
+     * Returns the estimated time the frame was taken, in the Time Sync Server's time base
+     * (wpi::nt::Now). This is calculated using the estimated offset between Time Sync Server time and
+     * local time. The robot shall run a server, so the offset shall be 0.
      *
      * @return The timestamp in seconds
      */
     public double getTimestampSeconds() {
-        return metadata.captureTimestampMicros / 1e6;
+        return metadata.captureTimestampNanos / 1e9;
     }
 
     @Override

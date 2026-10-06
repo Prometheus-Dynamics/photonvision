@@ -17,10 +17,7 @@
 
 package org.photonvision.common.configuration;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import edu.wpi.first.cscore.UsbCameraInfo;
+import io.avaje.jsonb.Json;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +33,7 @@ import org.photonvision.vision.pipeline.CVPipelineSettings;
 import org.photonvision.vision.pipeline.DriverModePipelineSettings;
 import org.photonvision.vision.processes.PipelineManager;
 
+@Json
 public class CameraConfiguration {
     private static final Logger logger = new Logger(CameraConfiguration.class, LogGroup.Camera);
 
@@ -62,11 +60,8 @@ public class CameraConfiguration {
 
     public int streamIndex = 0; // 0 index means ports [1181, 1182], 1 means [1183, 1184], etc...
 
-    // Ignore the pipes, as we serialize them to their own column to hack around
-    // polymorphic lists
-    @JsonIgnore public List<CVPipelineSettings> pipelineSettings = new ArrayList<>();
+    public List<CVPipelineSettings> pipelineSettings = new ArrayList<>();
 
-    @JsonIgnore
     public DriverModePipelineSettings driveModeSettings = new DriverModePipelineSettings();
 
     public CameraConfiguration(PVCameraInfo cameraInfo, String uniqueName, String nickname) {
@@ -78,24 +73,22 @@ public class CameraConfiguration {
         logger.debug("Creating USB camera configuration for " + this.toShortString());
     }
 
-    // Shiny new constructor
-    @JsonCreator
+    // JSON Constructor (can't be marked with @Json.Creator due to public fields that aren't part of
+    // the parameters)
     public CameraConfiguration(
-            @JsonProperty("uniqueName") String uniqueName,
-            @JsonProperty("matchedCameraInfo") PVCameraInfo matchedCameraInfo,
-            @JsonProperty("nickname") String nickname,
-            @JsonProperty("deactivated") boolean deactivated,
-            @JsonProperty("cameraQuirks") QuirkyCamera cameraQuirks,
-            @JsonProperty("FOV") double FOV,
-            @JsonProperty("calibrations") List<CameraCalibrationCoefficients> calibrations,
-            @JsonProperty("currentPipelineIndex") int currentPipelineIndex) {
+            String uniqueName,
+            PVCameraInfo matchedCameraInfo,
+            String nickname,
+            boolean deactivated,
+            QuirkyCamera cameraQuirks,
+            double FOV,
+            int currentPipelineIndex) {
         this.uniqueName = uniqueName;
         this.matchedCameraInfo = matchedCameraInfo;
         this.nickname = nickname;
         this.deactivated = deactivated;
         this.cameraQuirks = cameraQuirks;
         this.FOV = FOV;
-        this.calibrations = calibrations != null ? calibrations : new ArrayList<>();
         this.currentPipelineIndex = currentPipelineIndex;
     }
 
@@ -114,33 +107,6 @@ public class CameraConfiguration {
      */
     public CameraConfiguration(PVCameraInfo camInfo) {
         this(UUID.randomUUID().toString(), camInfo);
-    }
-
-    public static class LegacyCameraConfigStruct {
-        PVCameraInfo matchedCameraInfo;
-
-        /** Legacy constructor for compat with 2024.3.1 */
-        @JsonCreator
-        public LegacyCameraConfigStruct(
-                @JsonProperty("baseName") String baseName,
-                @JsonProperty("path") String path,
-                @JsonProperty("otherPaths") String[] otherPaths,
-                @JsonProperty("cameraType") CameraType cameraType,
-                @JsonProperty("usbVID") int usbVID,
-                @JsonProperty("usbPID") int usbPID) {
-            if (cameraType == CameraType.UsbCamera) {
-                this.matchedCameraInfo =
-                        PVCameraInfo.fromUsbCameraInfo(
-                                new UsbCameraInfo(-1, path, baseName, otherPaths, usbVID, usbPID));
-            } else if (cameraType == CameraType.ZeroCopyPicam) {
-                this.matchedCameraInfo = PVCameraInfo.fromCSICameraInfo(path, baseName);
-            } else {
-                // wtf
-                logger.error("Camera type is invalid");
-                this.matchedCameraInfo = null;
-                return;
-            }
-        }
     }
 
     public void addPipelineSettings(List<CVPipelineSettings> settings) {
@@ -171,16 +137,16 @@ public class CameraConfiguration {
     }
 
     /**
-     * Replace a calibration in our list with the same unrotatedImageSize with a new one, or add it if
-     * none exists yet. If we are replacing an existing calibration, the old one will be "released"
-     * and the underlying data matrices will become invalid.
+     * Replace a calibration in our list with the same resolution with a new one, or add it if none
+     * exists yet. If we are replacing an existing calibration, the old one will be "released" and the
+     * underlying data matrices will become invalid.
      *
      * @param calibration The calibration to add.
      */
     public void addCalibration(CameraCalibrationCoefficients calibration) {
-        logger.info("adding calibration " + calibration.unrotatedImageSize);
+        logger.info("adding calibration " + calibration.resolution);
         calibrations.stream()
-                .filter(it -> it.unrotatedImageSize.equals(calibration.unrotatedImageSize))
+                .filter(it -> it.resolution.equals(calibration.resolution))
                 .findAny()
                 .ifPresent(
                         (it) -> {
@@ -194,12 +160,12 @@ public class CameraConfiguration {
      * Remove a calibration from our list. If found, the calibration will be "released". If not found,
      * no-op.
      *
-     * @param unrotatedImageSize The resolution to remove.
+     * @param resolution The resolution to remove.
      */
-    public void removeCalibration(Size unrotatedImageSize) {
-        logger.info("deleting calibration " + unrotatedImageSize);
+    public void removeCalibration(Size resolution) {
+        logger.info("deleting calibration " + resolution);
         calibrations.stream()
-                .filter(it -> it.unrotatedImageSize.equals(unrotatedImageSize))
+                .filter(it -> it.resolution.equals(resolution))
                 .findAny()
                 .ifPresent(
                         (it) -> {
@@ -215,7 +181,6 @@ public class CameraConfiguration {
      *
      * <p>This represents our best guess at an immutable path to detect a camera at.
      */
-    @JsonIgnore
     public String getDevicePath() {
         return matchedCameraInfo.uniquePath();
     }

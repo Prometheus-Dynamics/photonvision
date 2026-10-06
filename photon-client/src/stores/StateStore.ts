@@ -31,7 +31,8 @@ interface StateStore {
   currentCameraUniqueName: string;
   networkUsageHistory: NetworkUsageEntry[];
 
-  backendResults: Record<number, PipelineResult>;
+  // Key is a string, although often used as an index, because we need to reference using the camera unique name at times.
+  backendResults: Record<string, PipelineResult>;
   multitagResultBuffer: Record<string, MultitagResult[]>;
 
   colorPickingMode: boolean;
@@ -39,8 +40,6 @@ interface StateStore {
   calibrationData: {
     imageCount: number;
     videoFormatIndex: number;
-    minimumImageCount: number;
-    hasEnoughImages: boolean;
   };
 
   snackbarData: {
@@ -88,9 +87,7 @@ export const useStateStore = defineStore("state", {
 
       calibrationData: {
         imageCount: 0,
-        videoFormatIndex: 0,
-        minimumImageCount: 12,
-        hasEnoughImages: false
+        videoFormatIndex: 0
       },
 
       snackbarData: {
@@ -161,9 +158,7 @@ export const useStateStore = defineStore("state", {
     updateCalibrationStateValuesFromWebsocket(data: WebsocketCalibrationData) {
       this.calibrationData = {
         imageCount: data.count,
-        videoFormatIndex: data.videoModeIndex,
-        minimumImageCount: data.minCount,
-        hasEnoughImages: data.hasEnough
+        videoFormatIndex: data.videoModeIndex
       };
     },
     updateDiscoveredCameras(data: VsmState) {
@@ -182,7 +177,7 @@ export const useStateStore = defineStore("state", {
         message: data.message,
         color: data.color,
         progressBarColor: data.progressBarColor || "",
-        timeout: data.timeout || 2000
+        timeout: data.timeout || 5000
       };
     }
   }

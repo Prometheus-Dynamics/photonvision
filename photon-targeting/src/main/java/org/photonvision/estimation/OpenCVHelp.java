@@ -17,16 +17,6 @@
 
 package org.photonvision.estimation;
 
-import edu.wpi.first.math.MatBuilder;
-import edu.wpi.first.math.Matrix;
-import edu.wpi.first.math.Nat;
-import edu.wpi.first.math.Num;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Transform3d;
-import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.math.numbers.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -48,6 +38,16 @@ import org.opencv.core.RotatedRect;
 import org.opencv.imgproc.Imgproc;
 import org.photonvision.targeting.PnpResult;
 import org.photonvision.targeting.TargetCorner;
+import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Transform3d;
+import org.wpilib.math.geometry.Translation3d;
+import org.wpilib.math.linalg.MatBuilder;
+import org.wpilib.math.linalg.Matrix;
+import org.wpilib.math.linalg.VecBuilder;
+import org.wpilib.math.numbers.*;
+import org.wpilib.math.util.Nat;
+import org.wpilib.math.util.Num;
 
 /**
  * A set of various utility functions for getting non-OpenCV data into an OpenCV-compatible format,
@@ -278,7 +278,7 @@ public final class OpenCVHelp {
      * @return The converted rotation in the NWU coordinate system
      */
     private static Rotation3d rotationEDNtoNWU(Rotation3d rot) {
-        return EDN_TO_NWU.unaryMinus().plus(rot.plus(EDN_TO_NWU));
+        return EDN_TO_NWU.inverse().rotateBy(rot.rotateBy(EDN_TO_NWU));
     }
 
     /**
@@ -288,7 +288,7 @@ public final class OpenCVHelp {
      * @return The converted rotation in the EDN coordinate system
      */
     private static Rotation3d rotationNWUtoEDN(Rotation3d rot) {
-        return NWU_TO_EDN.unaryMinus().plus(rot.plus(NWU_TO_EDN));
+        return NWU_TO_EDN.inverse().rotateBy(rot.rotateBy(NWU_TO_EDN));
     }
 
     /**
@@ -485,8 +485,7 @@ public final class OpenCVHelp {
             Matrix<N8, N1> distCoeffs,
             Point[] points,
             boolean useFisheye) {
-        var distMat = new MatOfPoint2f(points);
-        var undistMat = new MatOfPoint2f();
+        var pointsMat = new MatOfPoint2f(points);
         var cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
         var distCoeffsMat = matrixToMat(distCoeffs.getStorage());
 
@@ -494,16 +493,15 @@ public final class OpenCVHelp {
             Mat distCoeffsFisheye = toFisheyeDistCoeffs(distCoeffsMat);
             Mat identity = Mat.eye(3, 3, CvType.CV_64F);
             Calib3d.fisheye_undistortPoints(
-                    distMat, undistMat, cameraMatrixMat, distCoeffsFisheye, identity, cameraMatrixMat);
+                    pointsMat, pointsMat, cameraMatrixMat, distCoeffsFisheye, identity, cameraMatrixMat);
             identity.release();
             distCoeffsFisheye.release();
         } else {
-            Calib3d.undistortImagePoints(distMat, undistMat, cameraMatrixMat, distCoeffsMat);
+            Calib3d.undistortImagePoints(pointsMat, pointsMat, cameraMatrixMat, distCoeffsMat);
         }
-        var undistPoints = undistMat.toArray();
+        var undistPoints = pointsMat.toArray();
 
-        distMat.release();
-        undistMat.release();
+        pointsMat.release();
         cameraMatrixMat.release();
         distCoeffsMat.release();
 
@@ -617,33 +615,28 @@ public final class OpenCVHelp {
             List<Translation3d> modelTrls,
             Point[] imagePoints,
             boolean useFisheye) {
-        // solvepnp inputs
-        MatOfPoint3f objectMat = new MatOfPoint3f();
+        // IPPE_SQUARE expects our corners in a specific order
+        modelTrls = reorderCircular(modelTrls, true, -1);
+        imagePoints = reorderCircular(Arrays.asList(imagePoints), true, -1).toArray(Point[]::new);
+        if (useFisheye) {
+            // Undistort with the fisheye model, then solve as an ideal pinhole camera
+            imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
+        }
+
+        // translate to OpenCV classes
+        MatOfPoint3f objectMat = translationToTvec(modelTrls.toArray(new Translation3d[0]));
         MatOfPoint2f imageMat = new MatOfPoint2f();
-        MatOfDouble cameraMatrixMat = new MatOfDouble();
-        MatOfDouble distCoeffsMat = new MatOfDouble();
+        imageMat.fromArray(imagePoints);
+        Mat cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
+        Mat distCoeffsMat =
+                useFisheye ? new MatOfDouble(0, 0, 0, 0) : matrixToMat(distCoeffs.getStorage());
         var rvecs = new ArrayList<Mat>();
         var tvecs = new ArrayList<Mat>();
         Mat rvec = Mat.zeros(3, 1, CvType.CV_32F);
         Mat tvec = Mat.zeros(3, 1, CvType.CV_32F);
         Mat reprojectionError = Mat.zeros(2, 1, CvType.CV_32F);
-        try {
-            // IPPE_SQUARE expects our corners in a specific order
-            modelTrls = reorderCircular(modelTrls, true, -1);
-            imagePoints = reorderCircular(Arrays.asList(imagePoints), true, -1).toArray(Point[]::new);
-            if (useFisheye) {
-                imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
-            }
-            // translate to OpenCV classes
-            translationToTvec(modelTrls.toArray(new Translation3d[0])).assignTo(objectMat);
-            imageMat.fromArray(imagePoints);
-            matrixToMat(cameraMatrix.getStorage()).assignTo(cameraMatrixMat);
-            if (useFisheye) {
-                distCoeffsMat.fromArray(0, 0, 0, 0);
-            } else {
-                matrixToMat(distCoeffs.getStorage()).assignTo(distCoeffsMat);
-            }
 
+        try {
             float[] errors = new float[2];
             Transform3d best = null;
             Transform3d alt = null;
@@ -751,25 +744,23 @@ public final class OpenCVHelp {
             List<Translation3d> objectTrls,
             Point[] imagePoints,
             boolean useFisheye) {
+        if (useFisheye) {
+            // Undistort with the fisheye model, then solve as an ideal pinhole camera
+            imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
+        }
+        // translate to OpenCV classes
+        MatOfPoint3f objectMat = translationToTvec(objectTrls.toArray(new Translation3d[0]));
+        MatOfPoint2f imageMat = new MatOfPoint2f(imagePoints);
+        Mat cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
+        Mat distCoeffsMat =
+                useFisheye ? new MatOfDouble(0, 0, 0, 0) : matrixToMat(distCoeffs.getStorage());
+        var rvecs = new ArrayList<Mat>();
+        var tvecs = new ArrayList<Mat>();
+        Mat rvec = Mat.zeros(3, 1, CvType.CV_32F);
+        Mat tvec = Mat.zeros(3, 1, CvType.CV_32F);
+        Mat reprojectionError = new Mat();
+
         try {
-            // translate to OpenCV classes
-            MatOfPoint3f objectMat = translationToTvec(objectTrls.toArray(new Translation3d[0]));
-            if (useFisheye) {
-                imagePoints = undistortPoints(cameraMatrix, distCoeffs, imagePoints, true);
-            }
-            MatOfPoint2f imageMat = new MatOfPoint2f(imagePoints);
-            Mat cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
-            Mat distCoeffsMat;
-            if (useFisheye) {
-                distCoeffsMat = new MatOfDouble(0, 0, 0, 0);
-            } else {
-                distCoeffsMat = matrixToMat(distCoeffs.getStorage());
-            }
-            var rvecs = new ArrayList<Mat>();
-            var tvecs = new ArrayList<Mat>();
-            Mat rvec = Mat.zeros(3, 1, CvType.CV_32F);
-            Mat tvec = Mat.zeros(3, 1, CvType.CV_32F);
-            Mat reprojectionError = new Mat();
             // calc rvec/tvec from image points
             Calib3d.solvePnPGeneric(
                     objectMat,
@@ -789,6 +780,15 @@ public final class OpenCVHelp {
             // convert to wpilib coordinates
             var best = new Transform3d(tvecToTranslation(tvecs.get(0)), rvecToRotation(rvecs.get(0)));
 
+            // check if solvePnP failed with NaN results
+            if (Double.isNaN(error[0])) throw new Exception("SolvePNP_SQPNP NaN result");
+
+            return Optional.of(new PnpResult(best, error[0]));
+        } catch (Exception e) {
+            System.err.println("SolvePNP_SQPNP failed!");
+            e.printStackTrace();
+            return Optional.empty();
+        } finally {
             // release our Mats from native memory
             objectMat.release();
             imageMat.release();
@@ -799,15 +799,6 @@ public final class OpenCVHelp {
             rvec.release();
             tvec.release();
             reprojectionError.release();
-
-            // check if solvePnP failed with NaN results
-            if (Double.isNaN(error[0])) throw new Exception("SolvePNP_SQPNP NaN result");
-
-            return Optional.of(new PnpResult(best, error[0]));
-        } catch (Exception e) {
-            System.err.println("SolvePNP_SQPNP failed!");
-            e.printStackTrace();
-            return Optional.empty();
         }
     }
 }

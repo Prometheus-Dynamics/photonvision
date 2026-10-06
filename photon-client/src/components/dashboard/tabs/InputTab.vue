@@ -7,6 +7,7 @@ import { computed } from "vue";
 import { useSettingsStore } from "@/stores/settings/GeneralSettingsStore";
 import { useStateStore } from "@/stores/StateStore";
 import { getResolutionString } from "@/lib/PhotonUtils";
+import { PVUsbCamera } from "@/types/SettingTypes";
 import { useDisplay } from "vuetify";
 
 // Due to something with libcamera or something else IDK much about, the 90° rotations need to be disabled if the libcamera drivers are being used.
@@ -20,21 +21,23 @@ const cameraRotations = computed(() =>
 
 const streamDivisors = [1, 2, 4, 6];
 const getFilteredStreamDivisors = (): number[] => {
-  const currentResolutionWidth = useCameraSettingsStore().currentVideoFormat.resolution.width;
-  return streamDivisors.filter(
-    (x) =>
-      useCameraSettingsStore().isDriverMode ||
-      !useSettingsStore().gpuAccelerationEnabled ||
-      currentResolutionWidth / x < 400
-  );
+  const currentResolutionWidth = useCameraSettingsStore().currentVideoFormat?.resolution.width;
+  return currentResolutionWidth
+    ? streamDivisors.filter(
+        (x) =>
+          useCameraSettingsStore().isDriverMode ||
+          !useSettingsStore().gpuAccelerationEnabled ||
+          currentResolutionWidth / x < 400
+      )
+    : [];
 };
 const getNumberOfSkippedDivisors = () => streamDivisors.length - getFilteredStreamDivisors().length;
 
-const cameraResolutions = computed(() =>
-  useCameraSettingsStore().currentCameraSettings.validVideoFormats.map(
-    (f) => `${getResolutionString(f.resolution)} at ${f.fps} FPS, ${f.pixelFormat}`
-  )
-);
+const cameraResolutions = (): { name: string; value: number }[] =>
+  useCameraSettingsStore().currentCameraSettings.validVideoFormats.map<{ name: string; value: number }>((f) => ({
+    name: `${getResolutionString(f.resolution)} at ${f.fps} FPS, ${f.pixelFormat}`,
+    value: f.index || 0 // Index won't ever be undefined
+  }));
 const handleResolutionChange = (value: number) => {
   useCameraSettingsStore().changeCurrentPipelineSetting({ cameraVideoModeIndex: value }, false);
 
@@ -48,21 +51,26 @@ const handleResolutionChange = (value: number) => {
 
 const streamResolutions = computed(() => {
   const streamDivisors = getFilteredStreamDivisors();
-  const currentResolution = useCameraSettingsStore().currentVideoFormat.resolution;
-  return streamDivisors.map(
-    (x) =>
-      `${getResolutionString({
-        width: Math.floor(currentResolution.width / x),
-        height: Math.floor(currentResolution.height / x)
-      })}`
-  );
+  const currentResolution = useCameraSettingsStore().currentVideoFormat?.resolution;
+  return currentResolution
+    ? streamDivisors.map((x, i) => ({
+        name: `${Math.floor(currentResolution.width / x)}x${Math.floor(currentResolution.height / x)}`,
+        value: i
+      }))
+    : [];
 });
-const handleStreamResolutionChange = (value: number) => {
-  useCameraSettingsStore().changeCurrentPipelineSetting(
-    { streamingFrameDivisor: value + getNumberOfSkippedDivisors() },
-    false
-  );
-};
+const currentStreamResolutionIndex = computed<number>({
+  get: () => {
+    const stored = useCameraSettingsStore().currentPipelineSettings.streamingFrameDivisor;
+    const skipped = getNumberOfSkippedDivisors();
+    return stored - skipped;
+  },
+  set: (index) => {
+    useCameraSettingsStore().changeCurrentPipelineSetting({
+      streamingFrameDivisor: index + getNumberOfSkippedDivisors()
+    });
+  }
+});
 const { mdAndDown } = useDisplay();
 
 const interactiveCols = computed(() =>
@@ -160,7 +168,7 @@ const interactiveCols = computed(() =>
     />
     <pv-switch
       v-model="useCameraSettingsStore().currentPipelineSettings.blockForFrames"
-      :disabled="!useCameraSettingsStore().currentCameraSettings.matchedCameraInfo.PVUsbCameraInfo"
+      :disabled="useCameraSettingsStore().currentCameraSettings.matchedCameraInfo.type !== PVUsbCamera"
       label="Low Latency Mode"
       :switch-cols="interactiveCols"
       tooltip="When enabled, USB cameras wait for the next camera frame for lowest latency. When disabled, uses the most recent available frame for higher FPS."
@@ -171,7 +179,7 @@ const interactiveCols = computed(() =>
     <pv-select
       v-model="useCameraSettingsStore().currentPipelineSettings.inputImageRotationMode"
       label="Orientation"
-      tooltip="Rotates the camera stream. Rotation not available when camera has been calibrated."
+      tooltip="Rotates the camera stream"
       :items="cameraRotations"
       :select-cols="interactiveCols"
       @update:modelValue="
@@ -182,17 +190,16 @@ const interactiveCols = computed(() =>
       v-model="useCameraSettingsStore().currentPipelineSettings.cameraVideoModeIndex"
       label="Resolution"
       tooltip="Resolution and FPS the camera should directly capture at"
-      :items="cameraResolutions"
+      :items="cameraResolutions()"
       :select-cols="interactiveCols"
       @update:modelValue="(args) => handleResolutionChange(args)"
     />
     <pv-select
-      v-model="useCameraSettingsStore().currentPipelineSettings.streamingFrameDivisor"
+      v-model="currentStreamResolutionIndex"
       label="Stream Resolution"
       tooltip="Resolution to which camera frames are downscaled for streaming to the dashboard"
       :items="streamResolutions"
       :select-cols="interactiveCols"
-      @update:modelValue="(args) => handleStreamResolutionChange(args)"
     />
     <pv-switch
       v-if="useCameraSettingsStore().isDriverMode"

@@ -24,296 +24,341 @@
 
 #include "photon/simulation/VisionSystemSim.h"
 
-#include <chrono>
-#include <thread>
 #include <tuple>
 #include <vector>
 
-#include <gtest/gtest.h>
-#include <wpi/deprecated.h>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators_all.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <wpi/fields/Field.hpp>
+#include <wpi/fields/FieldTag.hpp>
+#include <wpi/util/deprecated.hpp>
 
+#include "photon/PhotonPoseEstimator.h"
 #include "photon/PhotonUtils.h"
+#include "photon/estimation/VisionEstimation.h"
 
 // Ignore GetLatestResult warnings
 WPI_IGNORE_DEPRECATED
 
-class VisionSystemSimTest : public ::testing::Test {
-  void SetUp() override {
-    nt::NetworkTableInstance::GetDefault().StartServer();
+class VisionSystemSimTest {
+ public:
+  VisionSystemSimTest() {
+    wpi::nt::NetworkTableInstance::GetDefault().StartServer();
     photon::PhotonCamera::SetVersionCheckEnabled(false);
   }
-
-  void TearDown() override {}
 };
 
-class VisionSystemSimTestWithParamsTest
-    : public VisionSystemSimTest,
-      public testing::WithParamInterface<units::degree_t> {};
-class VisionSystemSimTestDistanceParamsTest
-    : public VisionSystemSimTest,
-      public testing::WithParamInterface<
-          std::tuple<units::foot_t, units::degree_t, units::foot_t>> {};
+class VisionSystemSimTestWithParamsTest : public VisionSystemSimTest {};
+class VisionSystemSimTestDistanceParamsTest : public VisionSystemSimTest {};
 
-TEST_F(VisionSystemSimTest, TestVisibilityCupidShuffle) {
-  frc::Pose3d targetPose{
-      frc::Translation3d{15.98_m, 0_m, 2_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestVisibilityCupidShuffle",
+                 "[photonlib]") {
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{15.98_m, 0_m, 2_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{1.0_m, 1.0_m}, 3}});
 
   // To the right, to the right
-  frc::Pose2d robotPose{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{-70_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{5_m, 0_m},
+                              wpi::math::Rotation2d{-70_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 
   // To the right, to the right
-  robotPose =
-      frc::Pose2d{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{-95_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{5_m, 0_m},
+                                wpi::math::Rotation2d{-95_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 
   // To the left, to the left
-  robotPose =
-      frc::Pose2d{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{90_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{5_m, 0_m},
+                                wpi::math::Rotation2d{90_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 
   // To the left, to the left
-  robotPose =
-      frc::Pose2d{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{65_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{5_m, 0_m},
+                                wpi::math::Rotation2d{65_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 
   // Now kick, now kick
-  robotPose = frc::Pose2d{frc::Translation2d{2_m, 0_m}, frc::Rotation2d{5_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{2_m, 0_m},
+                                wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
   // Now kick, now kick
-  robotPose =
-      frc::Pose2d{frc::Translation2d{2_m, 0_m}, frc::Rotation2d{-5_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{2_m, 0_m},
+                                wpi::math::Rotation2d{-5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
   // Now walk it by yourself
-  robotPose =
-      frc::Pose2d{frc::Translation2d{2_m, 0_m}, frc::Rotation2d{-179_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{2_m, 0_m},
+                                wpi::math::Rotation2d{-179_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 
   // Now walk it by yourself
   visionSysSim.AdjustCamera(
       &cameraSim,
-      frc::Transform3d{
-          frc::Translation3d{},
-          frc::Rotation3d{0_deg, 0_deg, units::radian_t{std::numbers::pi}}});
+      wpi::math::Transform3d{
+          wpi::math::Translation3d{},
+          wpi::math::Rotation3d{0_deg, 0_deg,
+                                wpi::units::radian_t{std::numbers::pi}}});
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 }
 
-TEST_F(VisionSystemSimTest, TestBunchaTargets) {
+TEST_CASE_METHOD(VisionSystemSimTest, "TestBunchaTargets", "[photonlib]") {
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
 
   std::vector<photon::VisionTargetSim> targets;
   for (int i = 0; i < 100; i++) {
     targets.emplace_back(
-        frc::Pose3d{
-            frc::Translation3d{15.98_m + i * 0.1_m, 0_m, 1_m},
-            frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}},
+        wpi::math::Pose3d{
+            wpi::math::Translation3d{15.98_m + i * 0.1_m, 0_m, 1_m},
+            wpi::math::Rotation3d{0_rad, 0_rad,
+                                  wpi::units::radian_t{std::numbers::pi}}},
         photon::TargetModel{0.5_m, 0.5_m}, i);
   }
   visionSysSim.AddVisionTargets(targets);
 
-  frc::Pose2d robotPose{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{5_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{5_m, 0_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
 
-  ASSERT_EQ(camera.GetLatestResult().targets.size(), 50u);
+  REQUIRE(camera.GetLatestResult().targets.size() == 50u);
 }
 
-TEST_F(VisionSystemSimTest, TestNotVisibleVert1) {
-  frc::Pose3d targetPose{
-      frc::Translation3d{15.98_m, 0_m, 1_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestNotVisibleVert1", "[photonlib]") {
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{15.98_m, 0_m, 1_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{3.0_m, 3.0_m}, 3}});
 
-  frc::Pose2d robotPose{frc::Translation2d{5_m, 0_m}, frc::Rotation2d{5_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{5_m, 0_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
   visionSysSim.AdjustCamera(
       &cameraSim,
-      frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 5000_m},
-          frc::Rotation3d{0_deg, 0_deg, units::radian_t{std::numbers::pi}}});
+      wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 5000_m},
+          wpi::math::Rotation3d{0_deg, 0_deg,
+                                wpi::units::radian_t{std::numbers::pi}}});
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 }
 
-TEST_F(VisionSystemSimTest, TestNotVisibleVert2) {
-  frc::Pose3d targetPose{
-      frc::Translation3d{15.98_m, 0_m, 2_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestNotVisibleVert2", "[photonlib]") {
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{15.98_m, 0_m, 2_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
-  frc::Transform3d robotToCamera{
-      frc::Translation3d{0_m, 0_m, 1_m},
-      frc::Rotation3d{0_rad, units::radian_t{-std::numbers::pi / 4}, 0_rad}};
+  wpi::math::Transform3d robotToCamera{
+      wpi::math::Translation3d{0_m, 0_m, 1_m},
+      wpi::math::Rotation3d{0_rad, wpi::units::radian_t{-std::numbers::pi / 4},
+                            0_rad}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
   visionSysSim.AddCamera(&cameraSim, robotToCamera);
-  cameraSim.prop.SetCalibration(1234, 1234, frc::Rotation2d{80_deg});
+  cameraSim.prop.SetCalibration(1234, 1234, wpi::math::Rotation2d{80_deg});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{0.5_m, 0.5_m}, 1736}});
 
-  frc::Pose2d robotPose{frc::Translation2d{13.98_m, 0_m},
-                        frc::Rotation2d{5_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{13.98_m, 0_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
-  robotPose = frc::Pose2d{frc::Translation2d{0_m, 0_m}, frc::Rotation2d{5_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{0_m, 0_m},
+                                wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 }
 
-TEST_F(VisionSystemSimTest, TestNotVisibleTargetSize) {
-  frc::Pose3d targetPose{
-      frc::Translation3d{15.98_m, 0_m, 1_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestNotVisibleTargetSize",
+                 "[photonlib]") {
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{15.98_m, 0_m, 1_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   cameraSim.SetMinTargetAreaPixels(20.0);
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{0.1_m, 0.1_m}, 24}});
 
-  frc::Pose2d robotPose{frc::Translation2d{12_m, 0_m}, frc::Rotation2d{5_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{12_m, 0_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
-  robotPose = frc::Pose2d{frc::Translation2d{0_m, 0_m}, frc::Rotation2d{5_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{0_m, 0_m},
+                                wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 }
 
-TEST_F(VisionSystemSimTest, TestNotVisibleTooFarLeds) {
-  frc::Pose3d targetPose{
-      frc::Translation3d{15.98_m, 0_m, 1_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestNotVisibleTooFarLeds",
+                 "[photonlib]") {
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{15.98_m, 0_m, 1_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   cameraSim.SetMinTargetAreaPixels(1.0);
   cameraSim.SetMaxSightRange(10_m);
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{targetPose, photon::TargetModel{1_m, 1_m}, 25}});
 
-  frc::Pose2d robotPose{frc::Translation2d{10_m, 0_m}, frc::Rotation2d{5_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{10_m, 0_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_TRUE(camera.GetLatestResult().HasTargets());
+  REQUIRE(camera.GetLatestResult().HasTargets());
 
-  robotPose = frc::Pose2d{frc::Translation2d{0_m, 0_m}, frc::Rotation2d{5_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{0_m, 0_m},
+                                wpi::math::Rotation2d{5_deg}};
   visionSysSim.Update(robotPose);
-  ASSERT_FALSE(camera.GetLatestResult().HasTargets());
+  REQUIRE_FALSE(camera.GetLatestResult().HasTargets());
 }
 
-TEST_P(VisionSystemSimTestWithParamsTest, YawAngles) {
-  const frc::Pose3d targetPose{
+TEST_CASE_METHOD(VisionSystemSimTestWithParamsTest, "YawAngles",
+                 "[photonlib]") {
+  const wpi::math::Pose3d targetPose{
       {15.98_m, 0_m, 0_m},
-      frc::Rotation3d{0_deg, 0_deg, units::radian_t{3 * std::numbers::pi / 4}}};
+      wpi::math::Rotation3d{0_deg, 0_deg,
+                            wpi::units::radian_t{3 * std::numbers::pi / 4}}};
+  auto param = GENERATE(-10_deg, -5_deg, -0_deg, -1_deg, -2_deg, 5_deg, 7_deg,
+                        10.23_deg);
+
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   cameraSim.SetMinTargetAreaPixels(0.0);
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{0.5_m, 0.5_m}, 3}});
 
   // If the robot is rotated x deg (CCW+), the target yaw should be x deg (CW+)
-  frc::Pose2d robotPose{frc::Translation2d{10_m, 0_m},
-                        frc::Rotation2d{GetParam()}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{10_m, 0_m},
+                              wpi::math::Rotation2d{param}};
   visionSysSim.Update(robotPose);
 
   const auto result = camera.GetLatestResult();
-  ASSERT_TRUE(result.HasTargets());
-  ASSERT_NEAR(GetParam().to<double>(), result.GetBestTarget().GetYaw(), 0.25);
+  REQUIRE(result.HasTargets());
+  REQUIRE_THAT(result.GetBestTarget().GetYaw(),
+               Catch::Matchers::WithinAbs(param.to<double>(), 0.25));
 }
 
-TEST_P(VisionSystemSimTestWithParamsTest, PitchAngles) {
-  const frc::Pose3d targetPose{
+TEST_CASE_METHOD(VisionSystemSimTestWithParamsTest, "PitchAngles",
+                 "[photonlib]") {
+  const wpi::math::Pose3d targetPose{
       {15.98_m, 0_m, 0_m},
-      frc::Rotation3d{0_deg, 0_deg, units::radian_t{3 * std::numbers::pi / 4}}};
-  frc::Pose2d robotPose{{10_m, 0_m}, frc::Rotation2d{GetParam() * -1.0}};
+      wpi::math::Rotation3d{0_deg, 0_deg,
+                            wpi::units::radian_t{3 * std::numbers::pi / 4}}};
+  auto param = GENERATE(-10_deg, -5_deg, -0_deg, -1_deg, -2_deg, 5_deg, 7_deg,
+                        10.23_deg);
+
+  wpi::math::Pose2d robotPose{{10_m, 0_m}, wpi::math::Rotation2d{param * -1.0}};
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{120_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{120_deg});
   cameraSim.SetMinTargetAreaPixels(0.0);
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
       targetPose, photon::TargetModel{0.5_m, 0.5_m}, 3}});
 
-  robotPose = frc::Pose2d{frc::Translation2d{10_m, 0_m},
-                          frc::Rotation2d{-1 * GetParam()}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{10_m, 0_m},
+                                wpi::math::Rotation2d{-1 * param}};
   visionSysSim.AdjustCamera(
       &cameraSim,
-      frc::Transform3d{
-          frc::Translation3d{},
-          frc::Rotation3d{0_rad, units::degree_t{GetParam()}, 0_rad}});
+      wpi::math::Transform3d{
+          wpi::math::Translation3d{},
+          wpi::math::Rotation3d{0_rad, wpi::units::degree_t{param}, 0_rad}});
   visionSysSim.Update(robotPose);
 
   const auto result = camera.GetLatestResult();
-  ASSERT_TRUE(result.HasTargets());
-  ASSERT_NEAR(GetParam().to<double>(), result.GetBestTarget().GetPitch(), 0.25);
+  REQUIRE(result.HasTargets());
+  REQUIRE_THAT(result.GetBestTarget().GetPitch(),
+               Catch::Matchers::WithinAbs(param.to<double>(), 0.25));
 }
 
-INSTANTIATE_TEST_SUITE_P(AnglesTests, VisionSystemSimTestWithParamsTest,
-                         testing::Values(-10_deg, -5_deg, -0_deg, -1_deg,
-                                         -2_deg, 5_deg, 7_deg, 10.23_deg));
+TEST_CASE_METHOD(VisionSystemSimTestDistanceParamsTest, "DistanceCalc",
+                 "[photonlib]") {
+  auto [distParam, pitchParam, heightParam] =
+      GENERATE(std::make_tuple(5_ft, -15.98_deg, 0_ft),
+               std::make_tuple(6_ft, -15.98_deg, 1_ft),
+               std::make_tuple(10_ft, -15.98_deg, 0_ft),
+               std::make_tuple(15_ft, -15.98_deg, 2_ft),
+               std::make_tuple(19.95_ft, -15.98_deg, 0_ft),
+               std::make_tuple(20_ft, -15.98_deg, 0_ft),
+               std::make_tuple(5_ft, -42_deg, 1_ft),
+               std::make_tuple(6_ft, -42_deg, 0_ft),
+               std::make_tuple(10_ft, -42_deg, 2_ft),
+               std::make_tuple(15_ft, -42_deg, 0.5_ft),
+               std::make_tuple(19.42_ft, -15.98_deg, 0_ft),
+               std::make_tuple(20_ft, -42_deg, 0_ft),
+               std::make_tuple(5_ft, -55_deg, 2_ft),
+               std::make_tuple(6_ft, -55_deg, 0_ft),
+               std::make_tuple(10_ft, -54_deg, 2.2_ft),
+               std::make_tuple(15_ft, -53_deg, 0_ft),
+               std::make_tuple(19.52_ft, -15.98_deg, 1.1_ft));
 
-TEST_P(VisionSystemSimTestDistanceParamsTest, DistanceCalc) {
-  units::foot_t distParam;
-  units::degree_t pitchParam;
-  units::foot_t heightParam;
-  std::tie(distParam, pitchParam, heightParam) = GetParam();
-
-  const frc::Pose3d targetPose{
+  const wpi::math::Pose3d targetPose{
       {15.98_m, 0_m, 1_m},
-      frc::Rotation3d{0_deg, 0_deg, units::radian_t{std::numbers::pi * 0.98}}};
-  frc::Pose3d robotPose{{15.98_m - distParam, 0_m, 0_m}, frc::Rotation3d{}};
-  frc::Transform3d robotToCamera{frc::Translation3d{0_m, 0_m, heightParam},
-                                 frc::Rotation3d{0_deg, pitchParam, 0_deg}};
+      wpi::math::Rotation3d{0_deg, 0_deg,
+                            wpi::units::radian_t{std::numbers::pi * 0.98}}};
+  wpi::math::Pose3d robotPose{{15.98_m - distParam, 0_m, 0_m},
+                              wpi::math::Rotation3d{}};
+  wpi::math::Transform3d robotToCamera{
+      wpi::math::Translation3d{0_m, 0_m, heightParam},
+      wpi::math::Rotation3d{0_deg, pitchParam, 0_deg}};
   photon::VisionSystemSim visionSysSim{
       "absurdlylongnamewhichshouldneveractuallyhappenbuteehwelltestitanywaysoho"
       "wsyourdaygoingihopegoodhaveagreatrestofyourlife"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{160_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{160_deg});
   cameraSim.SetMinTargetAreaPixels(0.0);
   visionSysSim.AdjustCamera(&cameraSim, robotToCamera);
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
@@ -321,134 +366,123 @@ TEST_P(VisionSystemSimTestDistanceParamsTest, DistanceCalc) {
   visionSysSim.Update(robotPose);
 
   photon::PhotonPipelineResult res = camera.GetLatestResult();
-  ASSERT_TRUE(res.HasTargets());
+  REQUIRE(res.HasTargets());
   photon::PhotonTrackedTarget target = res.GetBestTarget();
 
-  ASSERT_NEAR(0.0, target.GetYaw(), 0.5);
+  REQUIRE_THAT(target.GetYaw(), Catch::Matchers::WithinAbs(0.0, 0.5));
 
-  units::meter_t dist = photon::PhotonUtils::CalculateDistanceToTarget(
+  wpi::units::meter_t dist = photon::PhotonUtils::CalculateDistanceToTarget(
       robotToCamera.Z(), targetPose.Z(), -pitchParam,
-      units::degree_t{target.GetPitch()});
-  ASSERT_NEAR(dist.to<double>(),
-              distParam.convert<units::meters>().to<double>(), 0.25);
+      wpi::units::degree_t{target.GetPitch()});
+  REQUIRE_THAT(distParam.convert<wpi::units::meters>().to<double>(),
+               Catch::Matchers::WithinAbs(dist.to<double>(), 0.25));
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    DistanceParamsTests, VisionSystemSimTestDistanceParamsTest,
-    testing::Values(std::make_tuple(5_ft, -15.98_deg, 0_ft),
-                    std::make_tuple(6_ft, -15.98_deg, 1_ft),
-                    std::make_tuple(10_ft, -15.98_deg, 0_ft),
-                    std::make_tuple(15_ft, -15.98_deg, 2_ft),
-                    std::make_tuple(19.95_ft, -15.98_deg, 0_ft),
-                    std::make_tuple(20_ft, -15.98_deg, 0_ft),
-                    std::make_tuple(5_ft, -42_deg, 1_ft),
-                    std::make_tuple(6_ft, -42_deg, 0_ft),
-                    std::make_tuple(10_ft, -42_deg, 2_ft),
-                    std::make_tuple(15_ft, -42_deg, 0.5_ft),
-                    std::make_tuple(19.42_ft, -15.98_deg, 0_ft),
-                    std::make_tuple(20_ft, -42_deg, 0_ft),
-                    std::make_tuple(5_ft, -55_deg, 2_ft),
-                    std::make_tuple(6_ft, -55_deg, 0_ft),
-                    std::make_tuple(10_ft, -54_deg, 2.2_ft),
-                    std::make_tuple(15_ft, -53_deg, 0_ft),
-                    std::make_tuple(19.52_ft, -15.98_deg, 1.1_ft)));
-
-TEST_F(VisionSystemSimTest, TestMultipleTargets) {
-  frc::Pose3d targetPoseL{
-      frc::Translation3d{15.98_m, 2_m, 0_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
-  frc::Pose3d targetPoseC{
-      frc::Translation3d{15.98_m, 0_m, 0_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
-  frc::Pose3d targetPoseR{
-      frc::Translation3d{15.98_m, -2_m, 0_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestMultipleTargets", "[photonlib]") {
+  wpi::math::Pose3d targetPoseL{
+      wpi::math::Translation3d{15.98_m, 2_m, 0_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
+  wpi::math::Pose3d targetPoseC{
+      wpi::math::Translation3d{15.98_m, 0_m, 0_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
+  wpi::math::Pose3d targetPoseR{
+      wpi::math::Translation3d{15.98_m, -2_m, 0_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   cameraSim.SetMinTargetAreaPixels(20.0);
 
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseL.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0_m}, frc::Rotation3d{}}),
+      targetPoseL.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 1}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseC.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0_m}, frc::Rotation3d{}}),
+      targetPoseC.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 2}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseR.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0_m}, frc::Rotation3d{}}),
+      targetPoseR.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 3}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseL.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 1_m}, frc::Rotation3d{}}),
+      targetPoseL.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 1_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 4}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseC.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 1_m}, frc::Rotation3d{}}),
+      targetPoseC.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 1_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 5}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseR.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 1_m}, frc::Rotation3d{}}),
+      targetPoseR.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 1_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 6}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseL.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0.5_m}, frc::Rotation3d{}}),
+      targetPoseL.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0.5_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 7}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseC.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0.5_m}, frc::Rotation3d{}}),
+      targetPoseC.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0.5_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 8}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseL.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0.75_m}, frc::Rotation3d{}}),
+      targetPoseL.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0.75_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 9}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseR.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0.75_m}, frc::Rotation3d{}}),
+      targetPoseR.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0.75_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 10}});
   visionSysSim.AddVisionTargets({photon::VisionTargetSim{
-      targetPoseL.TransformBy(frc::Transform3d{
-          frc::Translation3d{0_m, 0_m, 0.25_m}, frc::Rotation3d{}}),
+      targetPoseL.TransformBy(wpi::math::Transform3d{
+          wpi::math::Translation3d{0_m, 0_m, 0.25_m}, wpi::math::Rotation3d{}}),
       photon::kAprilTag16h5, 11}});
 
-  frc::Pose2d robotPose{frc::Translation2d{6_m, 0_m}, frc::Rotation2d{.25_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{6_m, 0_m},
+                              wpi::math::Rotation2d{.25_deg}};
   visionSysSim.Update(robotPose);
   photon::PhotonPipelineResult res = camera.GetLatestResult();
-  ASSERT_TRUE(res.HasTargets());
+  REQUIRE(res.HasTargets());
   std::span<const photon::PhotonTrackedTarget> tgtList = res.GetTargets();
-  ASSERT_EQ(static_cast<size_t>(11), tgtList.size());
+  REQUIRE(static_cast<size_t>(11) == tgtList.size());
 }
 
-TEST_F(VisionSystemSimTest, TestPoseEstimation) {
+TEST_CASE_METHOD(VisionSystemSimTest, "TestPoseEstimation", "[photonlib]") {
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{90_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{90_deg});
   cameraSim.SetMinTargetAreaPixels(20.0);
 
-  std::vector<frc::AprilTag> tagList;
-  tagList.emplace_back(frc::AprilTag{
-      0, frc::Pose3d{12_m, 3_m, 1_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  tagList.emplace_back(frc::AprilTag{
-      1, frc::Pose3d{12_m, 1_m, -1_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  tagList.emplace_back(frc::AprilTag{
-      2, frc::Pose3d{11_m, 0_m, 2_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  units::meter_t fieldLength{54};
-  units::meter_t fieldWidth{27};
-  frc::AprilTagFieldLayout layout{tagList, fieldLength, fieldWidth};
-  frc::Pose2d robotPose{frc::Translation2d{5_m, 1_m}, frc::Rotation2d{5_deg}};
+  std::vector<wpi::fields::FieldTag> tagList;
+  tagList.emplace_back(wpi::fields::FieldTag{
+      0, wpi::math::Pose3d{
+             12_m, 3_m, 1_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  tagList.emplace_back(wpi::fields::FieldTag{
+      1, wpi::math::Pose3d{
+             12_m, 1_m, -1_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  tagList.emplace_back(wpi::fields::FieldTag{
+      2, wpi::math::Pose3d{
+             11_m, 0_m, 2_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  wpi::units::meter_t fieldLength{54};
+  wpi::units::meter_t fieldWidth{27};
+  wpi::fields::Field layout{"Test",      "Test",     "Test", std::nullopt,
+                            fieldLength, fieldWidth, "frc",  tagList};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{5_m, 1_m},
+                              wpi::math::Rotation2d{5_deg}};
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{tagList[0].pose, photon::kAprilTag16h5, 0}});
   visionSysSim.Update(robotPose);
@@ -464,13 +498,16 @@ TEST_F(VisionSystemSimTest, TestPoseEstimation) {
   }
   auto results = photon::VisionEstimation::EstimateCamPosePNP(
       camEigen, distEigen, targets, layout, photon::kAprilTag16h5);
-  ASSERT_TRUE(results);
-  frc::Pose3d pose = frc::Pose3d{} + results->best;
-  ASSERT_NEAR(5, pose.X().to<double>(), 0.01);
-  ASSERT_NEAR(1, pose.Y().to<double>(), 0.01);
-  ASSERT_NEAR(0, pose.Z().to<double>(), 0.01);
-  ASSERT_NEAR(units::degree_t{5}.convert<units::radians>().to<double>(),
-              pose.Rotation().Z().to<double>(), 0.01);
+  REQUIRE(results);
+  wpi::math::Pose3d pose = wpi::math::Pose3d{} + results->best;
+  REQUIRE_THAT(pose.X().to<double>(), Catch::Matchers::WithinAbs(5, 0.01));
+  REQUIRE_THAT(pose.Y().to<double>(), Catch::Matchers::WithinAbs(1, 0.01));
+  REQUIRE_THAT(pose.Z().to<double>(), Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(
+      pose.Rotation().Z().to<double>(),
+      Catch::Matchers::WithinAbs(
+          wpi::units::degree_t{5}.convert<wpi::units::radians>().to<double>(),
+          0.01));
 
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{tagList[1].pose, photon::kAprilTag16h5, 1}});
@@ -486,43 +523,55 @@ TEST_F(VisionSystemSimTest, TestPoseEstimation) {
   }
   auto results2 = photon::VisionEstimation::EstimateCamPosePNP(
       camEigen, distEigen, targets2, layout, photon::kAprilTag16h5);
-  ASSERT_TRUE(results2);
-  frc::Pose3d pose2 = frc::Pose3d{} + results2->best;
-  ASSERT_NEAR(robotPose.X().to<double>(), pose2.X().to<double>(), 0.01);
-  ASSERT_NEAR(robotPose.Y().to<double>(), pose2.Y().to<double>(), 0.01);
-  ASSERT_NEAR(0, pose2.Z().to<double>(), 0.01);
-  ASSERT_NEAR(units::degree_t{5}.convert<units::radians>().to<double>(),
-              pose2.Rotation().Z().to<double>(), 0.01);
+  REQUIRE(results2);
+  wpi::math::Pose3d pose2 = wpi::math::Pose3d{} + results2->best;
+  REQUIRE_THAT(pose2.X().to<double>(),
+               Catch::Matchers::WithinAbs(robotPose.X().to<double>(), 0.01));
+  REQUIRE_THAT(pose2.Y().to<double>(),
+               Catch::Matchers::WithinAbs(robotPose.Y().to<double>(), 0.01));
+  REQUIRE_THAT(pose2.Z().to<double>(), Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(
+      pose2.Rotation().Z().to<double>(),
+      Catch::Matchers::WithinAbs(
+          wpi::units::degree_t{5}.convert<wpi::units::radians>().to<double>(),
+          0.01));
 }
 
-TEST_F(VisionSystemSimTest, TestPoseEstimationRotated) {
-  frc::Transform3d robotToCamera{frc::Translation3d{6_in, 6_in, 6_in},
-                                 frc::Rotation3d{0_deg, -30_deg, 25.5_deg}};
+TEST_CASE_METHOD(VisionSystemSimTest, "TestPoseEstimationRotated",
+                 "[photonlib]") {
+  wpi::math::Transform3d robotToCamera{
+      wpi::math::Translation3d{6_in, 6_in, 6_in},
+      wpi::math::Rotation3d{0_deg, -30_deg, 25.5_deg}};
 
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"cameraRotated"};
   photon::PhotonCameraSim cameraSim{&camera};
   visionSysSim.AddCamera(&cameraSim, robotToCamera);
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{90_deg});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{90_deg});
   cameraSim.SetMinTargetAreaPixels(20.0);
 
-  std::vector<frc::AprilTag> tagList;
-  tagList.emplace_back(frc::AprilTag{
-      0, frc::Pose3d{12_m, 3_m, 1_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  tagList.emplace_back(frc::AprilTag{
-      1, frc::Pose3d{12_m, 1_m, -1_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  tagList.emplace_back(frc::AprilTag{
-      2, frc::Pose3d{11_m, 0_m, 2_m,
-                     frc::Rotation3d{0_rad, 0_rad,
-                                     units::radian_t{std::numbers::pi}}}});
-  units::meter_t fieldLength{54};
-  units::meter_t fieldWidth{27};
-  frc::AprilTagFieldLayout layout{tagList, fieldLength, fieldWidth};
-  frc::Pose2d robotPose{frc::Translation2d{5_m, 1_m}, frc::Rotation2d{-5_deg}};
+  std::vector<wpi::fields::FieldTag> tagList;
+  tagList.emplace_back(wpi::fields::FieldTag{
+      0, wpi::math::Pose3d{
+             12_m, 3_m, 1_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  tagList.emplace_back(wpi::fields::FieldTag{
+      1, wpi::math::Pose3d{
+             12_m, 1_m, -1_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  tagList.emplace_back(wpi::fields::FieldTag{
+      2, wpi::math::Pose3d{
+             11_m, 0_m, 2_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  wpi::units::meter_t fieldLength{54};
+  wpi::units::meter_t fieldWidth{27};
+  wpi::fields::Field layout{"Test",      "Test",     "Test", std::nullopt,
+                            fieldLength, fieldWidth, "frc",  tagList};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{5_m, 1_m},
+                              wpi::math::Rotation2d{-5_deg}};
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{tagList[0].pose, photon::kAprilTag36h11, 0}});
   visionSysSim.Update(robotPose);
@@ -534,7 +583,7 @@ TEST_F(VisionSystemSimTest, TestPoseEstimationRotated) {
   auto targetSpan = camResults.GetTargets();
 
   // We need to see at least one target
-  ASSERT_GT(targetSpan.size(), static_cast<size_t>(0));
+  REQUIRE(targetSpan.size() > static_cast<size_t>(0));
 
   std::vector<photon::PhotonTrackedTarget> targets;
   for (photon::PhotonTrackedTarget tar : targetSpan) {
@@ -542,14 +591,17 @@ TEST_F(VisionSystemSimTest, TestPoseEstimationRotated) {
   }
   auto results = photon::VisionEstimation::EstimateCamPosePNP(
       camEigen, distEigen, targets, layout, photon::kAprilTag36h11);
-  ASSERT_TRUE(results);
-  frc::Pose3d pose = frc::Pose3d{} + results->best;
+  REQUIRE(results);
+  wpi::math::Pose3d pose = wpi::math::Pose3d{} + results->best;
   pose = pose.TransformBy(robotToCamera.Inverse());
-  ASSERT_NEAR(5, pose.X().to<double>(), 0.01);
-  ASSERT_NEAR(1, pose.Y().to<double>(), 0.01);
-  ASSERT_NEAR(0, pose.Z().to<double>(), 0.01);
-  ASSERT_NEAR(units::degree_t{-5}.convert<units::radians>().to<double>(),
-              pose.Rotation().Z().to<double>(), 0.01);
+  REQUIRE_THAT(pose.X().to<double>(), Catch::Matchers::WithinAbs(5, 0.01));
+  REQUIRE_THAT(pose.Y().to<double>(), Catch::Matchers::WithinAbs(1, 0.01));
+  REQUIRE_THAT(pose.Z().to<double>(), Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(
+      pose.Rotation().Z().to<double>(),
+      Catch::Matchers::WithinAbs(
+          wpi::units::degree_t{-5}.convert<wpi::units::radians>().to<double>(),
+          0.01));
 
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{tagList[1].pose, photon::kAprilTag36h11, 1}});
@@ -565,39 +617,114 @@ TEST_F(VisionSystemSimTest, TestPoseEstimationRotated) {
   }
   auto results2 = photon::VisionEstimation::EstimateCamPosePNP(
       camEigen, distEigen, targets2, layout, photon::kAprilTag36h11);
-  ASSERT_TRUE(results2);
-  frc::Pose3d pose2 = frc::Pose3d{} + results2->best;
+  REQUIRE(results2);
+  wpi::math::Pose3d pose2 = wpi::math::Pose3d{} + results2->best;
   pose2 = pose2.TransformBy(robotToCamera.Inverse());
-  ASSERT_NEAR(robotPose.X().to<double>(), pose2.X().to<double>(), 0.01);
-  ASSERT_NEAR(robotPose.Y().to<double>(), pose2.Y().to<double>(), 0.01);
-  ASSERT_NEAR(0, pose2.Z().to<double>(), 0.01);
-  ASSERT_NEAR(units::degree_t{-5}.convert<units::radians>().to<double>(),
-              pose2.Rotation().Z().to<double>(), 0.01);
+  REQUIRE_THAT(pose2.X().to<double>(),
+               Catch::Matchers::WithinAbs(robotPose.X().to<double>(), 0.01));
+  REQUIRE_THAT(pose2.Y().to<double>(),
+               Catch::Matchers::WithinAbs(robotPose.Y().to<double>(), 0.01));
+  REQUIRE_THAT(pose2.Z().to<double>(), Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(
+      pose2.Rotation().Z().to<double>(),
+      Catch::Matchers::WithinAbs(
+          wpi::units::degree_t{-5}.convert<wpi::units::radians>().to<double>(),
+          0.01));
 }
 
-TEST_F(VisionSystemSimTest, TestTagAmbiguity) {
+TEST_CASE_METHOD(VisionSystemSimTest, "TestRioMultiTagRotatedCamera",
+                 "[photonlib]") {
+  // Regression test: the rotation returned by MULTI_TAG_PNP_ON_RIO must match
+  // the true robot pose even when the camera is pitched and rolled. A previous
+  // bug in the OpenCV rotation-vector conversion inverted the camera rotation,
+  // doubling any pitch/roll component (a 15-degree camera pitch produced a
+  // 30-degree rotation error).
+  wpi::math::Transform3d robotToCamera{
+      wpi::math::Translation3d{6_in, 6_in, 6_in},
+      wpi::math::Rotation3d{10_deg, -20_deg, 15_deg}};
+
+  photon::VisionSystemSim visionSysSim{"Test"};
+  photon::PhotonCamera camera{"cameraRioMultiTag"};
+  photon::PhotonCameraSim cameraSim{&camera};
+  visionSysSim.AddCamera(&cameraSim, robotToCamera);
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{90_deg});
+  cameraSim.SetMinTargetAreaPixels(20.0);
+
+  std::vector<wpi::fields::FieldTag> tagList;
+  tagList.emplace_back(wpi::fields::FieldTag{
+      0, wpi::math::Pose3d{
+             10_m, 3_m, 1_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  tagList.emplace_back(wpi::fields::FieldTag{
+      1, wpi::math::Pose3d{
+             10_m, 0.5_m, 0.4_m,
+             wpi::math::Rotation3d{0_rad, 0_rad,
+                                   wpi::units::radian_t{std::numbers::pi}}}});
+  wpi::units::meter_t fieldLength{54};
+  wpi::units::meter_t fieldWidth{27};
+  wpi::fields::Field layout{"Test",      "Test",     "Test", std::nullopt,
+                            fieldLength, fieldWidth, "frc",  tagList};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{6_m, 1.5_m},
+                              wpi::math::Rotation2d{-5_deg}};
+  visionSysSim.AddVisionTargets(
+      {photon::VisionTargetSim{tagList[0].pose, photon::kAprilTag36h11, 0},
+       photon::VisionTargetSim{tagList[1].pose, photon::kAprilTag36h11, 1}});
+  visionSysSim.Update(robotPose);
+
+  auto camResults = camera.GetLatestResult();
+  // The on-RIO multitag strategy needs at least two tags in the layout.
+  REQUIRE(camResults.GetTargets().size() >= static_cast<size_t>(2));
+
+  photon::PhotonPoseEstimator estimator(layout, robotToCamera);
+  auto estimatedPose = estimator.EstimateRioMultiTagPose(
+      camResults, camera.GetCameraMatrix().value(),
+      camera.GetDistCoeffs().value());
+  REQUIRE(estimatedPose.has_value());
+  CHECK(photon::MULTI_TAG_PNP_ON_RIO == estimatedPose.value().strategy);
+
+  wpi::math::Pose3d pose = estimatedPose.value().estimatedPose;
+  REQUIRE_THAT(pose.X().to<double>(), Catch::Matchers::WithinAbs(6, 0.01));
+  REQUIRE_THAT(pose.Y().to<double>(), Catch::Matchers::WithinAbs(1.5, 0.01));
+  REQUIRE_THAT(pose.Z().to<double>(), Catch::Matchers::WithinAbs(0, 0.01));
+  // The robot itself is upright; all camera pitch/roll is in robotToCamera and
+  // must cancel out of the robot pose.
+  REQUIRE_THAT(pose.Rotation().X().to<double>(),
+               Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(pose.Rotation().Y().to<double>(),
+               Catch::Matchers::WithinAbs(0, 0.01));
+  REQUIRE_THAT(
+      pose.Rotation().Z().to<double>(),
+      Catch::Matchers::WithinAbs(
+          wpi::units::degree_t{-5}.convert<wpi::units::radians>().to<double>(),
+          0.01));
+}
+
+TEST_CASE_METHOD(VisionSystemSimTest, "TestTagAmbiguity", "[photonlib]") {
   photon::VisionSystemSim visionSysSim{"Test"};
   photon::PhotonCamera camera{"camera"};
   photon::PhotonCameraSim cameraSim{&camera};
-  visionSysSim.AddCamera(&cameraSim, frc::Transform3d{});
-  cameraSim.prop.SetCalibration(640, 480, frc::Rotation2d{80_deg});
+  visionSysSim.AddCamera(&cameraSim, wpi::math::Transform3d{});
+  cameraSim.prop.SetCalibration(640, 480, wpi::math::Rotation2d{80_deg});
   cameraSim.SetMinTargetAreaPixels(20.0);
 
-  frc::Pose3d targetPose{
-      frc::Translation3d{2_m, 0_m, 0_m},
-      frc::Rotation3d{0_rad, 0_rad, units::radian_t{std::numbers::pi}}};
+  wpi::math::Pose3d targetPose{
+      wpi::math::Translation3d{2_m, 0_m, 0_m},
+      wpi::math::Rotation3d{0_rad, 0_rad,
+                            wpi::units::radian_t{std::numbers::pi}}};
   visionSysSim.AddVisionTargets(
       {photon::VisionTargetSim{targetPose, photon::kAprilTag36h11, 3}});
 
-  frc::Pose2d robotPose{frc::Translation2d{0_m, 0_m}, frc::Rotation2d{0_deg}};
+  wpi::math::Pose2d robotPose{wpi::math::Translation2d{0_m, 0_m},
+                              wpi::math::Rotation2d{0_deg}};
   visionSysSim.Update(robotPose);
   double ambiguity =
       camera.GetLatestResult().GetBestTarget().GetPoseAmbiguity();
-  ASSERT_TRUE(ambiguity > 0.5);
+  REQUIRE(ambiguity > 0.5);
 
-  robotPose =
-      frc::Pose2d{frc::Translation2d{-2_m, -2_m}, frc::Rotation2d{30_deg}};
+  robotPose = wpi::math::Pose2d{wpi::math::Translation2d{-2_m, -2_m},
+                                wpi::math::Rotation2d{30_deg}};
   visionSysSim.Update(robotPose);
   ambiguity = camera.GetLatestResult().GetBestTarget().GetPoseAmbiguity();
-  ASSERT_TRUE(0 < ambiguity && ambiguity < 0.2);
+  REQUIRE((0 < ambiguity && ambiguity < 0.2));
 }

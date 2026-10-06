@@ -17,8 +17,8 @@
 
 package org.photonvision.jni;
 
-import edu.wpi.first.util.RawFrame;
-import edu.wpi.first.util.TimestampSource;
+import org.wpilib.util.RawFrame;
+import org.wpilib.util.TimestampSource;
 
 public class CscoreExtras {
     /**
@@ -30,10 +30,10 @@ public class CscoreExtras {
      * CvSource provides a new frame.
      *
      * @param sink Sink handle.
-     * @param framePtr Pointer to a wpi::RawFrame.
+     * @param framePtr Pointer to a wpi::util::RawFrame.
      * @param timeout Timeout in seconds.
      * @param lastFrameTime Timestamp of the last frame - used to compare new frames against.
-     * @return Frame time, in uS, of the incoming frame.
+     * @return Frame time, in nS, of the incoming frame.
      */
     public static native long grabRawSinkFrameTimeoutLastTime(
             int sink, long framePtr, double timeout, long lastFrameTime);

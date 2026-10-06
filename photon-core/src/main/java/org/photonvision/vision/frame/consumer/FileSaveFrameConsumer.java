@@ -17,29 +17,30 @@
 
 package org.photonvision.vision.frame.consumer;
 
-import edu.wpi.first.networktables.IntegerEntry;
-import edu.wpi.first.networktables.IntegerSubscriber;
-import edu.wpi.first.networktables.NetworkTable;
-import edu.wpi.first.networktables.StringSubscriber;
-import edu.wpi.first.wpilibj.DriverStation.MatchType;
 import java.io.File;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.function.Consumer;
 import org.opencv.imgcodecs.Imgcodecs;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.dataflow.networktables.NetworkTablesManager;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.vision.frame.StaticFrames;
 import org.photonvision.vision.opencv.CVMat;
+import org.wpilib.driverstation.MatchType;
+import org.wpilib.networktables.IntegerEntry;
+import org.wpilib.networktables.IntegerSubscriber;
+import org.wpilib.networktables.NetworkTable;
+import org.wpilib.networktables.StringSubscriber;
 
 public class FileSaveFrameConsumer implements Consumer<CVMat> {
     private final Logger logger = new Logger(FileSaveFrameConsumer.class, LogGroup.General);
 
     // Formatters to generate unique, timestamped file names
-    private static final String FILE_PATH = ConfigManager.getInstance().getImageSavePath().toString();
+    private static final String FILE_PATH =
+            ConfigProvider.getInstance().getImageSavePath().toString();
     static final String FILE_EXTENSION = ".jpg";
     private static final String NT_SUFFIX = "SaveImgCmd";
 
@@ -69,7 +70,8 @@ public class FileSaveFrameConsumer implements Consumer<CVMat> {
 
         this.rootTable = NetworkTablesManager.getInstance().kRootTable;
 
-        NetworkTable fmsTable = NetworkTablesManager.getInstance().getNTInst().getTable("FMSInfo");
+        NetworkTable fmsTable =
+                NetworkTablesManager.getInstance().getNTInst().getTable("DriverStation");
         this.ntEventName = fmsTable.getStringTopic("EventName").subscribe("UNKNOWN");
         this.ntMatchNum = fmsTable.getIntegerTopic("MatchNumber").subscribe(0);
         this.ntMatchType = fmsTable.getIntegerTopic("MatchType").subscribe(0);
@@ -165,7 +167,7 @@ public class FileSaveFrameConsumer implements Consumer<CVMat> {
             logger.warn("Did not receive event name, defaulting to 'UNKNOWN'");
         }
 
-        MatchType wpiMatchType = MatchType.None; // Default is to be unknown
+        MatchType wpiMatchType = MatchType.NONE; // Default is to be unknown
         if (matchType.value < 0 || matchType.value >= MatchType.values().length) {
             logger.error("Invalid match type from FMS: " + matchType.value);
         } else {

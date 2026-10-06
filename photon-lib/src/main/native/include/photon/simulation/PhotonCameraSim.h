@@ -24,26 +24,19 @@
 
 #pragma once
 
-#include <algorithm>
 #include <limits>
-#include <string>
-#include <utility>
 #include <vector>
 
-#include <cameraserver/CameraServer.h>
-#include <frc/Timer.h>
-#include <frc/apriltag/AprilTagFieldLayout.h>
-#include <frc/apriltag/AprilTagFields.h>
 #include <photon/PhotonCamera.h>
-#include <photon/PhotonTargetSortMode.h>
-#include <photon/estimation/CameraTargetRelation.h>
-#include <photon/estimation/VisionEstimation.h>
 #include <photon/networktables/NTTopicSet.h>
 #include <photon/simulation/SimCameraProperties.h>
-#include <photon/simulation/VideoSimUtil.h>
 #include <photon/simulation/VisionTargetSim.h>
-#include <units/math.h>
-#include <wpi/timestamp.h>
+#include <wpi/cameraserver/CameraServer.hpp>
+#include <wpi/fields/Field.hpp>
+#include <wpi/fields/fields.hpp>
+#include <wpi/system/Timer.hpp>
+#include <wpi/units/math.hpp>
+#include <wpi/util/timestamp.h>
 
 namespace photon {
 class PhotonCameraSim {
@@ -72,13 +65,11 @@ class PhotonCameraSim {
    *
    * @param camera The camera to be simulated
    * @param prop Properties of this camera such as FOV and FPS
-   * @param tagLayout The AprilTagFieldLayout used to solve for tag
-   * positions.
+   * @param tagLayout The Field used to solve for tag positions.
    */
   PhotonCameraSim(PhotonCamera* camera, const SimCameraProperties& props,
-                  const frc::AprilTagFieldLayout& tagLayout =
-                      frc::AprilTagFieldLayout::LoadField(
-                          frc::AprilTagField::kDefaultField));
+                  const wpi::fields::Field& tagLayout = wpi::fields::GetField(
+                      wpi::fields::FieldId::DEFAULT_FIELD));
 
   /**
    * Constructs a handle for simulating PhotonCamera values. Processing
@@ -95,7 +86,8 @@ class PhotonCameraSim {
    * separate from this.
    */
   PhotonCameraSim(PhotonCamera* camera, const SimCameraProperties& props,
-                  double minTargetAreaPercent, units::meter_t maxSightRange);
+                  double minTargetAreaPercent,
+                  wpi::units::meter_t maxSightRange);
 
   /**
    * Returns the camera being simulated.
@@ -128,8 +120,8 @@ class PhotonCameraSim {
    *
    * @return The distance
    */
-  inline units::meter_t GetMaxSightRange() { return maxSightRange; }
-  inline const cs::CvSource& GetVideoSimRaw() { return videoSimRaw; }
+  inline wpi::units::meter_t GetMaxSightRange() { return maxSightRange; }
+  inline const wpi::cs::CvSource& GetVideoSimRaw() { return videoSimRaw; }
   inline const cv::Mat& GetVideoSimFrameRaw() { return videoSimFrameRaw; }
 
   /**
@@ -140,7 +132,7 @@ class PhotonCameraSim {
    * @param target Vision target containing pose and shape
    * @return If this vision target can be seen before image projection.
    */
-  bool CanSeeTargetPose(const frc::Pose3d& camPose,
+  bool CanSeeTargetPose(const wpi::math::Pose3d& camPose,
                         const VisionTargetSim& target);
 
   /**
@@ -156,11 +148,11 @@ class PhotonCameraSim {
    * Determine if this camera should process a new frame based on performance
    * metrics and the time since the last update. This returns an Optional which
    * is either empty if no update should occur or a Long of the timestamp in
-   * microseconds of when the frame which should be received by NT. If a
+   * nanoseconds of when the frame which should be received by NT. If a
    * timestamp is returned, the last frame update time becomes that timestamp.
    *
    * @return Optional long which is empty while blocked or the NT entry
-   * timestamp in microseconds if ready
+   * timestamp in nanoseconds if ready
    */
   std::optional<uint64_t> ConsumeNextEntryTime();
 
@@ -190,7 +182,9 @@ class PhotonCameraSim {
    *
    * @param rangeMeters The distance
    */
-  inline void SetMaxSightRange(units::meter_t range) { maxSightRange = range; }
+  inline void SetMaxSightRange(wpi::units::meter_t range) {
+    maxSightRange = range;
+  }
 
   /**
    * Sets whether the raw video stream simulation is enabled.
@@ -233,8 +227,8 @@ class PhotonCameraSim {
   inline void EnabledProcessedStream(double enabled) {
     videoSimProcEnabled = enabled;
   }
-  PhotonPipelineResult Process(units::second_t latency,
-                               const frc::Pose3d& cameraPose,
+  PhotonPipelineResult Process(wpi::units::second_t latency,
+                               const wpi::math::Pose3d& cameraPose,
                                std::vector<VisionTargetSim> targets);
 
   void SubmitProcessedFrame(const PhotonPipelineResult& result);
@@ -249,20 +243,20 @@ class PhotonCameraSim {
   NTTopicSet ts{};
   int64_t heartbeatCounter{0};
 
-  uint64_t nextNTEntryTime{wpi::Now()};
+  int64_t nextNTEntryTime{wpi::nt::Now()};
 
-  units::meter_t maxSightRange{std::numeric_limits<double>::max()};
+  wpi::units::meter_t maxSightRange{std::numeric_limits<double>::max()};
   static constexpr double kDefaultMinAreaPx{100};
   double minTargetAreaPercent;
 
-  frc::AprilTagFieldLayout tagLayout;
+  wpi::fields::Field tagLayout;
 
-  cs::CvSource videoSimRaw;
+  wpi::cs::CvSource videoSimRaw;
   cv::Mat videoSimFrameRaw{};
   bool videoSimRawEnabled{true};
   bool videoSimWireframeEnabled{false};
   double videoSimWireframeResolution{0.1};
-  cs::CvSource videoSimProcessed;
+  wpi::cs::CvSource videoSimProcessed;
   cv::Mat videoSimFrameProcessed{};
   bool videoSimProcEnabled{true};
 };

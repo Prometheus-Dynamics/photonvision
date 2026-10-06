@@ -1,6 +1,6 @@
 # Using Target Data
 
-A `PhotonUtils` class with helpful common calculations is included within `PhotonLib` to aid teams in using AprilTag data in order to get positional information on the field. This class contains two methods, `calculateDistanceToTargetMeters()`/`CalculateDistanceToTarget()` and `estimateTargetTranslation2d()`/`EstimateTargetTranslation()` (Java and C++ respectively).
+A `PhotonUtils` class with helpful common calculations is included within Java and C++ PhotonLib to aid teams in using AprilTag data in order to get positional information on the field. This class contains `calculateDistanceToTargetMeters()`/`CalculateDistanceToTarget()` and `estimateTargetTranslation2d()`/`EstimateTargetTranslation()` (Java and C++ respectively). photonlibpy does not ship `PhotonUtils`; the Python tabs below use the matching wpimath calls.
 
 ## Estimating Field Relative Pose with AprilTags
 
@@ -20,7 +20,10 @@ A `PhotonUtils` class with helpful common calculations is included within `Photo
 
    .. code-block:: python
 
-      # Coming Soon!
+      # Calculate robot's field relative pose
+      tagPose = aprilTagFieldLayout.getTagPose(target.getFiducialId())
+      if tagPose is not None:
+          robotPose = tagPose + target.getBestCameraToTarget().inverse() + cameraToRobot
 ```
 
 ## Estimating Field Relative Pose (Traditional)
@@ -38,12 +41,13 @@ You can get your robot's `Pose2D` on the field using various camera data, target
    .. code-block:: c++
 
       // Calculate robot's field relative pose
-      frc::Pose2D robotPose = photonlib::EstimateFieldToRobot(
-        kCameraHeight, kTargetHeight, kCameraPitch, kTargetPitch, frc::Rotation2d(units::degree_t(-target.GetYaw())), frc::Rotation2d(units::degree_t(gyro.GetRotation2d)), targetPose, cameraToRobot);
+      wpi::math::Pose2d robotPose = photonlib::EstimateFieldToRobot(
+        kCameraHeight, kTargetHeight, kCameraPitch, kTargetPitch, wpi::math::Rotation2d(wpi::units::degree_t(-target.GetYaw())), wpi::math::Rotation2d(wpi::units::degree_t(gyro.GetRotation2d)), targetPose, cameraToRobot);
 
    .. code-block:: python
 
-      # Coming Soon!
+      # PhotonUtils.estimateFieldToRobot is Java/C++ only.
+      # Use the pitch/yaw helpers below, then compose with your gyro and cameraToRobot transform.
 
 ```
 
@@ -64,7 +68,11 @@ If your camera is at a fixed height on your robot and the height of the target i
 
    .. code-block:: python
 
-      # Coming Soon!
+      import math
+
+      distanceMeters = (kTargetHeight - kCameraHeight) / math.tan(
+          kCameraPitch + math.radians(target.getPitch())
+      )
 
 ```
 
@@ -88,7 +96,7 @@ The C++ version of PhotonLib uses the Units library. For more information, see [
 
    .. code-block:: python
 
-      # Coming Soon!
+      distanceToTarget = robotPose.translation().distance(targetPose.translation())
 ```
 
 ## Estimating Camera Translation to Target
@@ -106,12 +114,17 @@ You can get a [translation](https://docs.wpilib.org/en/latest/docs/software/adva
    .. code-block:: c++
 
       // Calculate a translation from the camera to the target.
-      frc::Translation2d translation = photonlib::PhotonUtils::EstimateCameraToTargetTranslation(
-        distance, frc::Rotation2d(units::degree_t(-target.GetYaw())));
+      wpi::math::Translation2d translation = photonlib::PhotonUtils::EstimateCameraToTargetTranslation(
+        distance, wpi::math::Rotation2d(wpi::units::degree_t(-target.GetYaw())));
 
    .. code-block:: python
 
-      # Coming Soon!
+      from wpimath.geometry import Rotation2d, Translation2d
+
+      # Calculate a translation from the camera to the target.
+      translation = Translation2d(
+          distanceMeters, Rotation2d.fromDegrees(-target.getYaw())
+      )
 
 ```
 
@@ -134,5 +147,8 @@ We are negating the yaw from the camera from CV (computer vision) conventions to
 
    .. code-block:: python
 
-      # Coming Soon!
+      from wpimath.geometry import Rotation2d
+
+      relative = targetPose.relativeTo(robotPose).translation()
+      targetYaw = Rotation2d(relative.X(), relative.Y())
 ```

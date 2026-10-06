@@ -1,16 +1,17 @@
-import edu.wpi.first.toolchain.*
+import org.wpilib.toolchain.*
 
 plugins {
     id "cpp"
     id "com.diffplug.spotless" version "8.1.0"
-    id "edu.wpi.first.wpilib.repositories.WPILibRepositoriesPlugin" version "2020.2"
-    id "edu.wpi.first.GradleRIO" version "2026.2.1"
-    id 'org.photonvision.tools.WpilibTools' version '2.3.3-photon'
-    id 'com.google.protobuf' version '0.9.3' apply false
-    id 'edu.wpi.first.GradleJni' version '1.1.0'
+    id "org.wpilib.WPILibRepositoriesPlugin" version "2027.0.0"
+    id 'org.wpilib.NativeUtils' version '2027.14.2' apply false
+    id 'org.wpilib.DeployUtils' version '2027.2.0' apply false
+    id 'org.photonvision.tools.WpilibTools' version 'v5.0.1'
+    id 'com.google.protobuf' version '0.9.5' apply false
+    id 'org.wpilib.GradleJni' version '2027.0.0'
     id "org.ysb33r.doxygen" version "2.0.0" apply false
-    id 'com.gradleup.shadow' version '8.3.4' apply false
-    id "com.github.node-gradle.node" version "7.0.1" apply false
+    id 'com.gradleup.shadow' version '9.0.0' apply false
+    id "com.github.node-gradle.node" version "7.1.0" apply false
 }
 
 allprojects {
@@ -28,20 +29,22 @@ allprojects {
 ext.localMavenURL = file("$project.buildDir/outputs/maven")
 ext.allOutputsFolder = file("$project.buildDir/outputs")
 
-// Configure the version number.
-apply from: "versioningHelper.gradle"
-
 ext {
-    wpilibVersion = "2026.2.1"
-    wpimathVersion = wpilibVersion
-    openCVYear = "2025"
-    openCVversion = "4.10.0-3"
+    wpilibVersion = "2027.0.0-alpha-7"
+    mrclibVersion = "2027.1.0-alpha-1-116-g5288562"
+    openCVversion = "2027-4.13.0-3"
+    ejmlVersion = "0.46.0";
+    avajeJsonbVersion = "3.15";
+    msgpackVersion = "0.9.0";
+    quickbufVersion = "1.4";
+    jacocoVersion = "0.8.14";
+
     javalinVersion = "6.7.0"
-    libcameraDriverVersion = project.findProperty("libcameraDriverVersion") ?: "v2026.0.0"
-    rknnVersion = "v2026.0.1"
-    rubikVersion = "v2026.0.1"
-    frcYear = "2026"
-    mrcalVersion = "v2026.0.0";
+    libcameraDriverVersion = project.findProperty("libcameraDriverVersion") ?: "v2027.0.0-alpha-1"
+    rknnVersion = "v2027.0.0"
+    tfliteVersion = "v2027.0.2-alpha-1"
+    wpilibYear = "2027_alpha7"
+    mrcalVersion = "dev-v2027.0.2-12-gdc31176";
 
     pubVersion = versionString
     isDev = pubVersion.startsWith("dev")
@@ -62,12 +65,12 @@ spotless {
     java {
         target fileTree('.') {
             include '**/*.java'
-            exclude '**/build/**', '**/build-*/**', '**/src/generated/**'
+            exclude '**/build/**', '**/build-*/**', '**/src/generated/**', '**/src/generated-test/**', "**/bin/generated-sources/**", "photon-serde-tests/src/**"
         }
         toggleOffOn()
         googleJavaFormat()
-        indentWithTabs(2)
-        indentWithSpaces(4)
+        leadingSpacesToTabs(2)
+        leadingTabsToSpaces(4)
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -78,7 +81,7 @@ spotless {
             exclude '**/build/**', '**/build-*/**'
         }
         greclipse()
-        indentWithSpaces(4)
+        leadingTabsToSpaces(4)
         trimTrailingWhitespace()
         endWithNewline()
     }
@@ -88,13 +91,13 @@ spotless {
             exclude '**/build/**', '**/build-*/**', '**/node_modules/**'
         }
         trimTrailingWhitespace()
-        indentWithSpaces(2)
+        leadingTabsToSpaces(2)
         endWithNewline()
     }
 }
 
 wrapper {
-    gradleVersion = '8.14.3'
+    gradleVersion = '9.4.1'
 }
 
 ext.getCurrentArch = {

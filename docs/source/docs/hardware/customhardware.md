@@ -19,14 +19,54 @@ When running on Linux, PhotonVision can use [diozero](https://www.diozero.com) t
         "ledsCanDim" : true,
         "ledBrightnessRange" : [ 0, 100 ],
         "ledPWMFrequency" : 0,
-        "statusRGBPins" : [ ],
-        "statusRGBActiveHigh" : false,
+        "statusLEDConfig" : {
+          "type": "RGB",
+          "redPin": 0,
+          "greenPin": 1,
+          "bluePin": 2,
+          "activeHigh": false,
+        },
       }
 ```
 
-:::{note}
-No hardware boards with status RGB LED pins or non-dimming LED's have been tested yet. Please reach out to the development team if these features are desired, they can assist with configuration and testing.
+There are currently three types of status LEDs supported, each with different configuration options:
+
+::::{tab-set}
+:::{tab-item} RGB (default)
+A singular LED mixing separate red, green, and blue inputs. `activeHigh` is optional.
+
+```json
+{
+  "statusLEDConfig" : {
+    "type": "RGB",
+    "redPin": 0,
+    "greenPin": 1,
+    "bluePin": 2,
+    "activeHigh": false,
+  },
+}
+```
+
 :::
+
+:::{tab-item} GreenYellow
+A pair of independent green and yellow LEDs. `activeHigh` is optional.
+
+```json
+{
+  "statusLEDConfig" : {
+    "type": "GreenYellow",
+    "greenPin": 0,
+    "yellowPin": 1,
+    "activeHigh": false,
+  },
+}
+```
+
+:::
+::::
+
+For an explanation of the colors used for status LEDs, see {ref}`Status LEDs<docs/troubleshooting/status-leds:Status LEDs>`
 
 ### GPIO Pinout
 
@@ -103,9 +143,9 @@ If your hardware contains a camera with a known field of vision, it can be enter
       }
 ```
 
-## Cosmetic & Branding
+## Device Name Branding
 
-To help differentiate your hardware from other solutions, some customization is allowed.
+To help differentiate your hardware from other solutions, a device name may be set.
 
 ```{eval-rst}
 .. tab-set-code::
@@ -113,8 +153,6 @@ To help differentiate your hardware from other solutions, some customization is 
 
       {
         "deviceName" : "Super Cool Custom Hardware",
-        "deviceLogoPath" : "",
-        "supportURL" : "https://cat-bounce.com/",
       }
 ```
 
@@ -132,14 +170,17 @@ Here is a complete example `hardwareConfig.json`:
 
       {
         "deviceName" : "Blinky McBlinkface",
-        "deviceLogoPath" : "",
-        "supportURL" : "https://www.youtube.com/watch?v=b-CvLWbfZhU",
         "ledPins" : [2, 13],
         "ledsCanDim" : true,
         "ledBrightnessRange" : [ 0, 100 ],
         "ledPWMFrequency" : 0,
-        "statusRGBPins" : [ ],
-        "statusRGBActiveHigh" : false,
+        "statusLEDConfig" : {
+          "type": "RGB",
+          "redPin": 0,
+          "greenPin": 1,
+          "bluePin": 2,
+          "activeHigh": false,
+        },
         "getGPIOCommand" : "getGPIO {p}",
         "setGPIOCommand" : "setGPIO {p} {s}",
         "setPWMCommand" : "setPWM {p} {v}",

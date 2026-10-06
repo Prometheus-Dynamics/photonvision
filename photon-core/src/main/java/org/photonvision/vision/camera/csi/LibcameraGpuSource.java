@@ -17,10 +17,8 @@
 
 package org.photonvision.vision.camera.csi;
 
-import edu.wpi.first.cscore.VideoMode;
-import edu.wpi.first.util.PixelFormat;
 import org.photonvision.common.configuration.CameraConfiguration;
-import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.vision.camera.CameraType;
@@ -29,6 +27,8 @@ import org.photonvision.vision.frame.FrameProvider;
 import org.photonvision.vision.frame.provider.LibcameraGpuFrameProvider;
 import org.photonvision.vision.processes.VisionSource;
 import org.photonvision.vision.processes.VisionSourceSettables;
+import org.wpilib.util.PixelFormat;
+import org.wpilib.vision.camera.VideoMode;
 
 public class LibcameraGpuSource extends VisionSource {
     static final Logger logger = new Logger(LibcameraGpuSource.class, LogGroup.Camera);
@@ -95,12 +95,12 @@ public class LibcameraGpuSource extends VisionSource {
 
     @Override
     public boolean isVendorCamera() {
-        return ConfigManager.getInstance().getConfig().getHardwareConfig().hasPresetFOV();
+        return ConfigProvider.getInstance().getConfig().getHardwareConfig().hasPresetFOV();
     }
 
     @Override
     public boolean hasLEDs() {
-        return (ConfigManager.getInstance().getConfig().getHardwareConfig().ledPins.size() > 0);
+        return (ConfigProvider.getInstance().getConfig().getHardwareConfig().ledPins.size() > 0);
     }
 
     @Override

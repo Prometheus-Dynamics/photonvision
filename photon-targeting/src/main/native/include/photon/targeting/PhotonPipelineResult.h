@@ -18,16 +18,13 @@
 #pragma once
 
 #include <span>
-#include <string>
 #include <utility>
 
-#include <units/time.h>
-#include <wpi/SmallVector.h>
+#include <wpi/units/time.hpp>
+#include <wpi/util/print.hpp>
 
 #include "MultiTargetPNPResult.h"
 #include "PhotonTrackedTarget.h"
-#include "fmt/base.h"
-#include "photon/dataflow/structures/Packet.h"
 #include "photon/struct/PhotonPipelineResultStruct.h"
 
 namespace photon {
@@ -73,7 +70,7 @@ class PhotonPipelineResult : public PhotonPipelineResult_PhotonStruct {
    */
   PhotonTrackedTarget GetBestTarget() const {
     if (!HasTargets() && !HAS_WARNED) {
-      fmt::println(
+      wpi::util::println(
           "WARNING: This PhotonPipelineResult object has no targets associated "
           "with it! "
           "Please check HasTargets() before calling this method. For more "
@@ -88,9 +85,9 @@ class PhotonPipelineResult : public PhotonPipelineResult_PhotonStruct {
    * Returns the latency in the pipeline.
    * @return The latency in the pipeline.
    */
-  units::millisecond_t GetLatency() const {
-    return units::microsecond_t{static_cast<double>(
-        metadata.publishTimestampMicros - metadata.captureTimestampMicros)};
+  wpi::units::millisecond_t GetLatency() const {
+    return wpi::units::nanosecond_t{static_cast<double>(
+        metadata.publishTimestampNanos - metadata.captureTimestampNanos)};
   }
 
   /**
@@ -102,7 +99,7 @@ class PhotonPipelineResult : public PhotonPipelineResult_PhotonStruct {
    * @return The timestamp in seconds or -1 if this result was not initiated
    * with a timestamp.
    */
-  units::second_t GetTimestamp() const {
+  wpi::units::second_t GetTimestamp() const {
     return ntReceiveTimestamp - GetLatency();
   }
 
@@ -125,7 +122,7 @@ class PhotonPipelineResult : public PhotonPipelineResult_PhotonStruct {
   int64_t SequenceID() const { return metadata.sequenceID; }
 
   /** Sets the FPGA timestamp this result was Received by robot code */
-  void SetReceiveTimestamp(const units::second_t timestamp) {
+  void SetReceiveTimestamp(const wpi::units::second_t timestamp) {
     this->ntReceiveTimestamp = timestamp;
   }
 
@@ -149,7 +146,7 @@ class PhotonPipelineResult : public PhotonPipelineResult_PhotonStruct {
 
   // Since we don't trust NT time sync, keep track of when we got this packet
   // into robot code
-  units::microsecond_t ntReceiveTimestamp = -1_s;
+  wpi::units::nanosecond_t ntReceiveTimestamp = -1_ns;
 
   inline static bool HAS_WARNED = false;
 };

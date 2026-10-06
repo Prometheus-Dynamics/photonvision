@@ -25,6 +25,7 @@ import org.photonvision.targeting.MultiTargetPNPResult;
 import org.photonvision.vision.frame.Frame;
 import org.photonvision.vision.opencv.Releasable;
 import org.photonvision.vision.target.TrackedTarget;
+import org.wpilib.networktables.NetworkTablesJNI;
 
 public class CVPipelineResult implements Releasable {
     public final long sequenceID;
@@ -104,13 +105,13 @@ public class CVPipelineResult implements Releasable {
     }
 
     /**
-     * Get the latency between now (wpi::Now) and the time at which the image was captured. FOOTGUN:
-     * the latency is relative to the time at which this method is called. Waiting to call this method
-     * will change the latency this method returns.
+     * Get the latency between now (wpi::nt::Now) and the time at which the image was captured.
+     * FOOTGUN: the latency is relative to the time at which this method is called. Waiting to call
+     * this method will change the latency this method returns.
      */
     @Deprecated
     public double getLatencyMillis() {
-        var now = MathUtils.wpiNanoTime();
+        var now = NetworkTablesJNI.now();
         return MathUtils.nanosToMillis(now - imageCaptureTimestampNanos);
     }
 

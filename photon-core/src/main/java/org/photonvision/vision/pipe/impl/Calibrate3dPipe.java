@@ -294,7 +294,8 @@ public class Calibrate3dPipe
         // preserving object/image point pairing.
         reorderPointsForFisheyeInitialization(objPoints, imgPoints, cx, cy);
 
-        int flags = Calib3d.fisheye_CALIB_USE_INTRINSIC_GUESS | Calib3d.fisheye_CALIB_RECOMPUTE_EXTRINSIC;
+        int flags =
+                Calib3d.fisheye_CALIB_USE_INTRINSIC_GUESS | Calib3d.fisheye_CALIB_RECOMPUTE_EXTRINSIC;
         TermCriteria criteria = new TermCriteria(TermCriteria.COUNT + TermCriteria.EPS, 100, 1e-6);
 
         var activeSnapshotIndices = new ArrayList<Integer>();
@@ -464,12 +465,7 @@ public class Calibrate3dPipe
 
                     boolean solved =
                             Calib3d.solvePnP(
-                                    objPointsForObs.get(i),
-                                    undistorted,
-                                    cameraMatrix,
-                                    zeroDistortion,
-                                    rvec,
-                                    tvec);
+                                    objPointsForObs.get(i), undistorted, cameraMatrix, zeroDistortion, rvec, tvec);
 
                     if (!solved || rvec.empty() || tvec.empty()) {
                         rvec.release();
@@ -501,9 +497,7 @@ public class Calibrate3dPipe
 
             if (solvedSnapshots.size() < 3) {
                 logger.error(
-                        "Only "
-                                + solvedSnapshots.size()
-                                + " snapshots produced valid fisheye extrinsics.");
+                        "Only " + solvedSnapshots.size() + " snapshots produced valid fisheye extrinsics.");
                 cameraMatrix.release();
                 distortionCoefficients.release();
                 rvecs.forEach(Mat::release);
@@ -545,7 +539,8 @@ public class Calibrate3dPipe
                         CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
 
         if (observations.isEmpty()) {
-            logger.error("Calibration aborted in fisheye observation pass: no valid observations were produced.");
+            logger.error(
+                    "Calibration aborted in fisheye observation pass: no valid observations were produced.");
             cameraMatrix.release();
             distortionCoefficients.release();
             rvecs.forEach(Mat::release);
@@ -683,8 +678,7 @@ public class Calibrate3dPipe
             return true;
         }
 
-        double requiredThetaD =
-                requiredDistortedThetaForImage(cameraMatrix, imageWidth, imageHeight);
+        double requiredThetaD = requiredDistortedThetaForImage(cameraMatrix, imageWidth, imageHeight);
         double supportedThetaD = maxSupportedDistortedTheta(distData, FISHEYE_THETA_LIMIT_RAD);
         if (!Double.isFinite(requiredThetaD)
                 || !Double.isFinite(supportedThetaD)
@@ -843,8 +837,7 @@ public class Calibrate3dPipe
         return Math.max(diag1, diag2);
     }
 
-    private double[] fisheyePixelToRay(
-            Mat cameraMatrix, double[] distData, double u, double v) {
+    private double[] fisheyePixelToRay(Mat cameraMatrix, double[] distData, double u, double v) {
         double fx = cameraMatrix.get(0, 0)[0];
         double alpha = cameraMatrix.get(0, 1)[0];
         double cx = cameraMatrix.get(0, 2)[0];
@@ -954,10 +947,7 @@ public class Calibrate3dPipe
                 order[j] = j;
             }
             Arrays.sort(
-                    order,
-                    (a, b) ->
-                            Double.compare(
-                                    radiusSq(img[b], cx, cy), radiusSq(img[a], cx, cy)));
+                    order, (a, b) -> Double.compare(radiusSq(img[b], cx, cy), radiusSq(img[a], cx, cy)));
 
             Point3[] reorderedObj = new Point3[n];
             Point[] reorderedImg = new Point[n];

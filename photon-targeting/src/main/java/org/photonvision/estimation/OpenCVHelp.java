@@ -481,10 +481,7 @@ public final class OpenCVHelp {
      * @return The undistorted image points
      */
     public static Point[] undistortPoints(
-            Matrix<N3, N3> cameraMatrix,
-            Matrix<N8, N1> distCoeffs,
-            Point[] points,
-            boolean useFisheye) {
+            Matrix<N3, N3> cameraMatrix, Matrix<N8, N1> distCoeffs, Point[] points, boolean useFisheye) {
         var pointsMat = new MatOfPoint2f(points);
         var cameraMatrixMat = matrixToMat(cameraMatrix.getStorage());
         var distCoeffsMat = matrixToMat(distCoeffs.getStorage());

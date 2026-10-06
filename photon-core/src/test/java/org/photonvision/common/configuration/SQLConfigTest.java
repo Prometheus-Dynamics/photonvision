@@ -48,6 +48,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.photonvision.common.LoadJNI;
 import org.photonvision.common.configuration.NeuralNetworkModelManager.Family;
 import org.photonvision.common.hardware.Platform;
+import org.photonvision.common.hardware.statusLED.RGBStatusLED;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.LogLevel;
 import org.photonvision.common.logging.Logger;
@@ -381,5 +382,77 @@ public class SQLConfigTest {
         assertEquals(
                 "C:\\Users\\matth\\Documents\\GitHub\\photonvision\\test\\photonvision_config\\calibration\\1414304b-6812-487a-ab5c-89ee70704fae\\imgs\\1280x720\\img0.png",
                 camCfg.calibrations.get(0).observations.get(0).snapshotDataLocation.toString());
+    }
+
+    @Test
+    public void testImageHardwareConfigDefault() throws IOException {
+        var configDir = tmpDir.resolve("image_hw_config");
+        Files.createDirectories(configDir);
+        // An OS image's hardwareConfig.json, in the pre-2027 flat status LED format
+        Files.writeString(
+                configDir.resolve("hardwareConfig.json"),
+                """
+                {
+                  "deviceName": "Raze",
+                  "supportURL": "https://example.com",
+                  "ledPins": [13],
+                  "ledsCanDim": true,
+                  "ledBrightnessRange": [0, 100],
+                  "statusRGBPins": [101, 102, 103],
+                  "statusRGBActiveHigh": true,
+                  "setGPIOCommand": "echo {s} > /run/led-{p}",
+                  "vendorFOV": -1
+                }
+                """);
+
+        var cfgLoader = new ConfigProvider(configDir);
+        cfgLoader.load();
+        var hw = cfgLoader.getConfig().getHardwareConfig();
+        assertEquals("Raze", hw.deviceName);
+        assertEquals(List.of(13), hw.ledPins);
+        assertEquals("echo {s} > /run/led-{p}", hw.setGPIOCommand);
+        assertTrue(hw.statusLEDConfig.isPresent());
+        var status = (RGBStatusLED.Config) hw.statusLEDConfig.get();
+        assertEquals(101, status.redPin);
+        assertEquals(102, status.greenPin);
+        assertEquals(103, status.bluePin);
+        assertTrue(status.activeHigh);
+
+        // A saved hardware config takes precedence over the image's file
+        hw.deviceName = "Saved";
+        cfgLoader.saveToDisk();
+        var reloaded = new ConfigProvider(configDir);
+        reloaded.load();
+        assertEquals("Saved", reloaded.getConfig().getHardwareConfig().deviceName);
+    }
+
+    @Test
+    public void testImageHardwareConfigDefaultStructured() throws IOException {
+        var configDir = tmpDir.resolve("image_hw_config_structured");
+        Files.createDirectories(configDir);
+        Files.writeString(
+                configDir.resolve("hardwareConfig.json"),
+                """
+                {
+                  "deviceName": "Raze",
+                  "ledPins": [13],
+                  "statusLEDConfig": {
+                    "type": "RGB",
+                    "redPin": 101,
+                    "greenPin": 102,
+                    "bluePin": 103,
+                    "activeHigh": true
+                  }
+                }
+                """);
+
+        var cfgLoader = new ConfigProvider(configDir);
+        cfgLoader.load();
+        var hw = cfgLoader.getConfig().getHardwareConfig();
+        assertEquals("Raze", hw.deviceName);
+        var status = (RGBStatusLED.Config) hw.statusLEDConfig.orElseThrow();
+        assertEquals(101, status.redPin);
+        assertEquals(103, status.bluePin);
+        assertTrue(status.activeHigh);
     }
 }

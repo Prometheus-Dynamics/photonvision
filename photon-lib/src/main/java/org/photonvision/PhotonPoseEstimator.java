@@ -474,12 +474,7 @@ public class PhotonPoseEstimator {
 
         var pnpResult =
                 VisionEstimation.estimateCamPosePNP(
-                        cameraMatrix,
-                        distCoeffs,
-                        cameraResult.getTargets(),
-                        fieldTags,
-                        tagModel,
-                        useFisheye);
+                        cameraMatrix, distCoeffs, cameraResult.getTargets(), fieldTags, tagModel, useFisheye);
         if (!pnpResult.isPresent()) return Optional.empty();
 
         var best =

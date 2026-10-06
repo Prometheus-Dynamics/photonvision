@@ -78,8 +78,7 @@ public class MultiTargetPNPPipe
                         TrackedTarget.simpleFromTrackedTargets(targetList),
                         params.field(),
                         params.targetModel(),
-                        params.cameraCoefficients().lensmodel
-                                == CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
+                        params.cameraCoefficients().lensmodel == CameraLensModel.LENSMODEL_OPENCV_FISHEYE);
 
         if (estimatedPose.isPresent()) {
             return Optional.of(new MultiTargetPNPResult(estimatedPose.get(), tagIDsUsed));

@@ -266,6 +266,12 @@ public class PipelineManager {
                 currentUserPipeline =
                         new ObjectDetectionPipeline((ObjectDetectionPipelineSettings) desiredPipelineSettings);
             }
+            case EidosAprilTag -> {
+                logger.debug("Creating Eidos AprilTag pipeline");
+                currentUserPipeline =
+                        new EidosAprilTagPipeline(
+                                (EidosAprilTagPipelineSettings) desiredPipelineSettings);
+            }
             case Calib3d, DriverMode, FocusCamera -> {}
         }
     }
@@ -340,6 +346,7 @@ public class PipelineManager {
                     case AprilTag -> new AprilTagPipelineSettings();
                     case Aruco -> new ArucoPipelineSettings();
                     case ObjectDetection -> new ObjectDetectionPipelineSettings();
+                    case EidosAprilTag -> new EidosAprilTagPipelineSettings();
                     case Calib3d, DriverMode, FocusCamera -> {
                         logger.error("Got invalid pipeline type: " + type);
                         yield null;

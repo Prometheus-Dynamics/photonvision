@@ -32,6 +32,11 @@ public class CVPipelineResult implements Releasable {
     public final double processingNanos;
     public final double fps;
     public final List<TrackedTarget> targets;
+    /**
+     * Targets of the Styx backend (no OpenCV contours). When set, these are what gets published and
+     * {@link #targets} is empty.
+     */
+    public List<org.photonvision.targeting.PhotonTrackedTarget> photonTargets = null;
     public final Frame inputAndOutputFrame;
     public Optional<MultiTargetPNPResult> multiTagResult;
     public final List<String> objectDetectionClassNames;
@@ -93,7 +98,7 @@ public class CVPipelineResult implements Releasable {
     }
 
     public boolean hasTargets() {
-        return !targets.isEmpty();
+        return photonTargets != null ? !photonTargets.isEmpty() : !targets.isEmpty();
     }
 
     public void release() {

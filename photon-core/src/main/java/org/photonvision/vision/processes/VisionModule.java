@@ -20,6 +20,12 @@ package org.photonvision.vision.processes;
 import edu.wpi.first.cscore.CameraServerJNI;
 import edu.wpi.first.cscore.VideoException;
 import edu.wpi.first.math.util.Units;
+import java.io.IOException;
+import org.photonvision.styx.StyxJNI;
+import org.photonvision.styx.StyxMjpegServer;
+import org.photonvision.vision.camera.csi.StyxCameraSource;
+import org.photonvision.vision.camera.csi.StyxSettables;
+import org.photonvision.vision.frame.StyxFrame;
 import io.javalin.websocket.WsContext;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -95,6 +101,9 @@ public class VisionModule {
 
     MJPGFrameConsumer inputVideoStreamer;
     MJPGFrameConsumer outputVideoStreamer;
+    // Styx backend: MJPEG from the camera session instead (no OpenCV Mats).
+    StyxMjpegServer styxInputStream;
+    StyxMjpegServer styxOutputStream;
 
     boolean mismatch;
 
@@ -203,6 +212,11 @@ public class VisionModule {
                         visionSource.getSettables().getConfiguration().uniqueName,
                         "output");
 
+        if (visionSource instanceof StyxCameraSource styxSource) {
+            createStyxStreams(styxSource);
+            return;
+        }
+
         String camHostname = CameraServerJNI.getHostname();
         inputVideoStreamer =
                 new MJPGFrameConsumer(
@@ -210,6 +224,32 @@ public class VisionModule {
         outputVideoStreamer =
                 new MJPGFrameConsumer(
                         camHostname + "_Port_" + outputStreamPort + "_Output_MJPEG_Server", outputStreamPort);
+    }
+
+    private void createStyxStreams(StyxCameraSource source) {
+        var settables = (StyxSettables) source.getSettables();
+        try {
+            styxInputStream =
+                    new StyxMjpegServer(
+                            "styx-input-" + inputStreamPort,
+                            inputStreamPort,
+                            timeout -> {
+                                long handle = settables.handle();
+                                return handle == 0 ? new byte[0] : StyxJNI.rawJpeg(handle, timeout);
+                            });
+            styxOutputStream =
+                    new StyxMjpegServer(
+                            "styx-output-" + outputStreamPort,
+                            outputStreamPort,
+                            timeout -> {
+                                long handle = settables.handle();
+                                return handle == 0 ? new byte[0] : StyxJNI.processedJpeg(handle, timeout);
+                            });
+            styxInputStream.start();
+            styxOutputStream.start();
+        } catch (IOException e) {
+            logger.error("Could not start the Styx MJPEG streams on " + inputStreamPort, e);
+        }
     }
 
     private void recreateStreamResultConsumers() {
@@ -663,6 +703,12 @@ public class VisionModule {
         consumePipelineResult(result);
 
         // Pipelines like DriverMode and Calibrate3dPipeline have null output frames
+        if (result.inputAndOutputFrame instanceof StyxFrame) {
+            // Styx frames have no Mats: the streams are served from the camera session.
+            consumePipelineResult(result);
+            result.release();
+            return;
+        }
         if (result.inputAndOutputFrame != null
                 && (pipelineManager.getCurrentPipelineSettings()
                         instanceof AdvancedPipelineSettings settings)) {
@@ -737,5 +783,30 @@ public class VisionModule {
 
     public CameraConfiguration getCameraConfiguration() {
         return this.visionSource.cameraConfiguration;
+    }
+
+    @Override
+    public void close() {
+        if (visionRunner.isRunning()) {
+            stop();
+        }
+
+        // Ensure config is saved and synced before closing
+        saveAndBroadcastAll();
+
+        if (inputVideoStreamer != null) inputVideoStreamer.close();
+        if (outputVideoStreamer != null) outputVideoStreamer.close();
+        if (styxInputStream != null) styxInputStream.close();
+        if (styxOutputStream != null) styxOutputStream.close();
+        inputFrameSaver.close();
+        outputFrameSaver.close();
+
+        changeSubscriberHandle.stop();
+        setVisionLEDs(false);
+
+        visionRunner.close();
+        pipelineManager.close();
+        visionSource.close();
+        if (lastPipelineResultBestTarget != null) lastPipelineResultBestTarget.close();
     }
 }

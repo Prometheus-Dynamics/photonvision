@@ -17,6 +17,7 @@
 
 package org.photonvision.vision.processes;
 
+import org.photonvision.vision.frame.StyxFrame;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -187,7 +188,9 @@ public class VisionRunner {
             var frame = frameSupplier.get();
 
             // Frame empty -- no point in trying to do anything more?
-            if (frame.processedImage.getMat().empty() && frame.colorImage.getMat().empty()) {
+            if (!(frame instanceof StyxFrame)
+                    && frame.processedImage.getMat().empty()
+                    && frame.colorImage.getMat().empty()) {
                 // give up without increasing loop count
                 // Still feed with blank frames just dont run any pipelines
 

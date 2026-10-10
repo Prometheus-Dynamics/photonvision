@@ -47,6 +47,10 @@ import org.photonvision.vision.camera.FileVisionSource;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.camera.USBCameras.USBCameraSource;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource;
+import org.photonvision.vision.camera.csi.StyxCameraSource;
+import org.photonvision.styx.StyxBackend;
+import org.photonvision.styx.StyxJNI;
+import java.io.IOException;
 
 /**
  * This class manages starting up VisionModules for serialized devices ({@link
@@ -302,7 +306,14 @@ public class VisionSourceManager {
                 .filter(c -> !(String.join("", c.otherPaths()).contains("csi-video")))
                 .filter(c -> !c.name().equals("unicam"))
                 .forEach(cameraInfos::add);
-        if (LoadJNI.hasLoaded(JNITypes.LIBCAMERA)) {
+        if (StyxBackend.enabled()) {
+            // Styx backend: the CSI cameras Styx finds (no libcamera), and no cscore duplicates of
+            // the sensor's own V4L2 nodes.
+            cameraInfos.removeIf(c -> c.name().contains("rp1-cfe") || c.name().contains("pisp"));
+            for (String name : styxCameraNames()) {
+                cameraInfos.add(PVCameraInfo.fromCSICameraInfo(name, name));
+            }
+        } else if (LoadJNI.hasLoaded(JNITypes.LIBCAMERA)) {
             // find all CSI cameras (Raspberry Pi cameras)
             Stream.of(LibCameraJNI.getCameraNames())
                     .map(
@@ -380,6 +391,16 @@ public class VisionSourceManager {
                                     + " affected)");
         } else {
             NetworkTablesManager.getInstance().setMismatchAlert(false, "");
+        }
+    }
+
+    private static List<String> styxCameraNames() {
+        try {
+            StyxJNI.load();
+            return List.of(StyxJNI.listCameras());
+        } catch (IOException | RuntimeException | UnsatisfiedLinkError e) {
+            logger.error("Could not list Styx cameras", e);
+            return List.of();
         }
     }
 
@@ -502,7 +523,10 @@ public class VisionSourceManager {
         VisionSource source =
                 switch (configuration.matchedCameraInfo.type()) {
                     case UsbCamera -> new USBCameraSource(configuration);
-                    case ZeroCopyPicam -> new LibcameraGpuSource(configuration);
+                    case ZeroCopyPicam ->
+                            StyxBackend.enabled()
+                                    ? new StyxCameraSource(configuration)
+                                    : new LibcameraGpuSource(configuration);
                     case FileCamera -> new FileVisionSource(configuration);
                 };
 

@@ -34,6 +34,7 @@ import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
 import org.photonvision.vision.pipeline.result.CalibrationPipelineResult;
+import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.vision.target.TrackedTarget;
 
 public class NTDataPublisher implements CVPipelineResultConsumer {
@@ -174,6 +175,12 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
         else acceptedResult = result;
         var now = NetworkTablesJNI.now();
         var captureMicros = MathUtils.nanosToMicros(result.getImageCaptureTimestampNanos());
+        // Styx-backend results carry PhotonTrackedTargets directly (no OpenCV contours).
+        var photonTargets = acceptedResult.photonTargets;
+        var publishedTargets =
+                photonTargets != null
+                        ? photonTargets
+                        : TrackedTarget.simpleFromTrackedTargets(acceptedResult.targets);
 
         var offset = NetworkTablesManager.getInstance().getOffset();
 
@@ -185,7 +192,7 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
                         captureMicros + offset,
                         now + offset,
                         NetworkTablesManager.getInstance().getTimeSinceLastPong(),
-                        TrackedTarget.simpleFromTrackedTargets(acceptedResult.targets),
+                        publishedTargets,
                         acceptedResult.multiTagResult);
 
         // random guess at size of the array
@@ -201,7 +208,22 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
         ts.fpsEntry.set(acceptedResult.fps);
         ts.hasTargetEntry.set(acceptedResult.hasTargets());
 
-        if (acceptedResult.hasTargets()) {
+        if (acceptedResult.hasTargets() && photonTargets != null) {
+            var best = photonTargets.get(0);
+            ts.targetPitchEntry.set(best.getPitch());
+            ts.targetYawEntry.set(best.getYaw());
+            ts.targetAreaEntry.set(best.getArea());
+            ts.targetSkewEntry.set(best.getSkew());
+            ts.targetPoseEntry.set(best.getBestCameraToTarget());
+            double cx = 0, cy = 0;
+            var corners = best.getDetectedCorners();
+            for (var corner : corners) {
+                cx += corner.x / corners.size();
+                cy += corner.y / corners.size();
+            }
+            ts.bestTargetPosX.set(cx);
+            ts.bestTargetPosY.set(cy);
+        } else if (acceptedResult.hasTargets()) {
             var bestTarget = acceptedResult.targets.get(0);
 
             ts.targetPitchEntry.set(bestTarget.getPitch());

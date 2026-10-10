@@ -36,10 +36,13 @@ import org.wpilib.vision.camera.VideoMode;
 public class StyxSettables extends VisionSourceSettables {
     private static final Logger logger = new Logger(StyxSettables.class, LogGroup.Camera);
 
-    /** The Raze OV9782 modes (grey, the sensor's 3A-processed luma). */
+    /**
+     * The Raze OV9782 modes (grey, the sensor's 3A-processed luma). Only the full frame at the
+     * sensor's natural rate for now: exact rates and 640x400 are not reliable on the kernel-driven
+     * sensor yet (Styx). The rated rate is what the sensor produces, not a request.
+     */
     private static final int[][] MODES = {
-        {1280, 800, 30}, {1280, 800, 60}, {1280, 800, 120},
-        {640, 400, 30}, {640, 400, 60}, {640, 400, 120},
+        {1280, 800, 30},
     };
 
     private FPSRatedVideoMode currentVideoMode;
@@ -102,7 +105,7 @@ public class StyxSettables extends VisionSourceSettables {
                                 getConfiguration().matchedCameraInfo.path(),
                                 mode.width,
                                 mode.height,
-                                mode.fps);
+                                0); // the sensor's natural rate
                 logger.info(
                         "Opened Styx camera "
                                 + getConfiguration().nickname

@@ -80,7 +80,7 @@ pub fn list_cameras() -> Vec<String> {
 
 impl Session {
     /// Open `camera` (a name from [`list_cameras`]; empty takes the first) at exactly `width` x
-    /// `height` and `fps`, as grey frames with a half-size pyramid level (level 1: the ISP's
+    /// `height`, at `fps` (0: the sensor's natural rate), as grey frames with a half-size pyramid level (level 1: the ISP's
     /// half, level 2: a CPU quarter). Detection reads level 1; refinement reads the full frame.
     pub fn open(camera: &str, width: u32, height: u32, fps: u32) -> Result<Self, String> {
         let probe = styx::probe_all_with_errors_with_config(
@@ -91,11 +91,14 @@ impl Session {
             .iter()
             .find(|d| camera.is_empty() || d.identity.display == camera)
             .ok_or_else(|| format!("no camera named '{camera}' (found {} devices)", probe.devices.len()))?;
-        // Exact mode: `fps_at_least` would pick the fastest mode (120 fps at 1280x800).
-        let plan = Frames::gray()
-            .size(width, height)
-            .fps(fps)
-            .pyramid(2)
+        // The size is exact. The rate is the sensor's natural one unless `fps` is non-zero: exact
+        // rates are not reliable on the kernel-driven sensor yet (30 asked, 21 delivered), so
+        // PhotonVision asks for 0.
+        let mut request = Frames::gray().size(width, height).pyramid(2);
+        if fps > 0 {
+            request = request.fps(fps);
+        }
+        let plan = request
             .plan_best(std::slice::from_ref(device))
             .map_err(|e| format!("cannot plan '{}': {e}", device.identity.display))?;
         let frames = plan

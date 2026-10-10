@@ -88,3 +88,24 @@ task writeCurrentVersion {
 sourceSets.main.java.srcDir "${buildDir}/generated/java/"
 
 compileJava.dependsOn writeCurrentVersion
+
+// Experimental Styx backend (-PstyxBackend): builds photon-styx (libphotonstyx.so) for the Raze
+// board and bundles it under linux/arm64 resources, where CombinedRuntimeLoader finds it. Without
+// the property nothing here runs and the jar is unchanged.
+if (project.hasProperty("styxBackend") && jniPlatform == "linuxarm64") {
+    def styxNativeDir = layout.buildDirectory.dir("styx-native").get().asFile
+    def buildPhotonStyx = tasks.register("buildPhotonStyx", Exec) {
+        workingDir rootProject.file("photon-styx")
+        commandLine "sh", "tools/build.sh"
+        inputs.dir(rootProject.file("photon-styx/src"))
+        inputs.file(rootProject.file("photon-styx/Cargo.toml"))
+        outputs.file(rootProject.file("photon-styx/target/aarch64-unknown-linux-gnu/release/libphotonstyx.so"))
+    }
+    def copyPhotonStyx = tasks.register("copyPhotonStyx", Copy) {
+        dependsOn buildPhotonStyx
+        from rootProject.file("photon-styx/target/aarch64-unknown-linux-gnu/release/libphotonstyx.so")
+        into "${styxNativeDir}/linux/arm64"
+    }
+    processResources.dependsOn copyPhotonStyx
+    sourceSets.main.resources.srcDir(styxNativeDir)
+}

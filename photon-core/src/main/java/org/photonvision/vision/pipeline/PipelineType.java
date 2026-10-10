@@ -26,7 +26,9 @@ public enum PipelineType {
     ColoredShape(1, ColoredShapePipeline.class),
     AprilTag(2, AprilTagPipeline.class),
     Aruco(3, ArucoPipeline.class),
-    ObjectDetection(4, ObjectDetectionPipeline.class);
+    ObjectDetection(4, ObjectDetectionPipeline.class),
+    /** Styx backend only: AprilTags detected by Eidos inside the camera session. */
+    EidosAprilTag(5, EidosAprilTagPipeline.class);
 
     public final int baseIndex;
     public final Class clazz;

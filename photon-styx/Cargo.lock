@@ -105,7 +105,6 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 [[package]]
 name = "eidos-aruco"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-calibration",
  "eidos-contour",
@@ -121,7 +120,6 @@ dependencies = [
 [[package]]
 name = "eidos-calibration"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-core",
 ]
@@ -129,7 +127,6 @@ dependencies = [
 [[package]]
 name = "eidos-contour"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-core",
  "eidos-frame",
@@ -140,7 +137,6 @@ dependencies = [
 [[package]]
 name = "eidos-core"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-macros",
  "spin",
@@ -151,9 +147,9 @@ dependencies = [
 [[package]]
 name = "eidos-detectors"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-aruco",
+ "eidos-calibration",
  "eidos-contour",
  "eidos-core",
  "eidos-frame",
@@ -164,7 +160,6 @@ dependencies = [
 [[package]]
 name = "eidos-frame"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-core",
  "smallvec",
@@ -175,8 +170,8 @@ dependencies = [
 [[package]]
 name = "eidos-geometry"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
+ "eidos-calibration",
  "eidos-core",
  "eidos-frame",
  "eidos-sampling",
@@ -185,12 +180,10 @@ dependencies = [
 [[package]]
 name = "eidos-macros"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 
 [[package]]
 name = "eidos-mask"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-core",
  "eidos-frame",
@@ -201,7 +194,6 @@ dependencies = [
 [[package]]
 name = "eidos-sampling"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-core",
  "eidos-frame",
@@ -210,12 +202,10 @@ dependencies = [
 [[package]]
 name = "eidos-scratch"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 
 [[package]]
 name = "eidos-temporal"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Eidos.git?rev=496dfef0f40a5df3c9d6abff2923be47d6751523#496dfef0f40a5df3c9d6abff2923be47d6751523"
 dependencies = [
  "eidos-aruco",
  "eidos-core",
@@ -1104,3 +1094,47 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "eidos"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-benches"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-color"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-daedalus"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-daedalus-plugin"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-draw"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-filter"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-io"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-motion"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-nostd-smoke"
+version = "1.0.0"
+
+[[patch.unused]]
+name = "eidos-test-fixtures"
+version = "1.0.0"

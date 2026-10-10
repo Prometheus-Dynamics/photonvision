@@ -37,12 +37,15 @@ public record StyxResult(
         double multiAmbiguity,
         double[] multiPose,
         List<Target> targets) {
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     static final int HEADER_BYTES = 4 + 8 + 8 + 8 + 4 + 4 + 4;
     static final int MULTI_BYTES = 4 + 4 + 8 + 8 + 7 * 8;
-    static final int TARGET_BYTES = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8;
+    static final int TARGET_BYTES = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8 + 2 * 8;
 
-    /** One detected tag. {@code alt} is null when the tag has no alternative pose. */
+    /**
+     * One detected tag. {@code alt} is null when the tag has no alternative pose. {@code center} is
+     * the tag centre undistorted into pinhole intrinsics (NaN when unknown).
+     */
     public record Target(
             int id,
             int hamming,
@@ -52,7 +55,8 @@ public record StyxResult(
             double[] alt,
             double ambiguity,
             double rmsBestPx,
-            double rmsAltPx) {}
+            double rmsAltPx,
+            double[] center) {}
 
     public static StyxResult decode(byte[] bytes) {
         ByteBuffer b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -83,6 +87,7 @@ public record StyxResult(
             double tagAmbiguity = b.getDouble();
             double rmsBest = b.getDouble();
             double rmsAlt = b.getDouble();
+            double[] center = doubles(b, 2);
             targets.add(
                     new Target(
                             id,
@@ -93,7 +98,8 @@ public record StyxResult(
                             hasAlt ? alt : null,
                             tagAmbiguity,
                             rmsBest,
-                            rmsAlt));
+                            rmsAlt,
+                            center));
         }
         return new StyxResult(
                 sequence,

@@ -20,10 +20,10 @@ crate-type = ["cdylib", "rlib"]
 # copy Eidos depends on only when the git reference matches. Cargo.lock pins it to 1dfc663
 # (origin/dev 1dfc663). Eidos is pinned by rev.
 styx = { git = "https://github.com/Prometheus-Dynamics/Styx.git", branch = "dev", default-features = false, features = ["native", "preview", "codec-turbojpeg"] }
-eidos-core = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false }
-eidos-aruco = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false }
-eidos-calibration = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false, features = ["std"] }
-eidos-detectors = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523" }
+eidos-core = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "64ae6a20cc6bb45616708e267e31d61770814583", default-features = false }
+eidos-aruco = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "64ae6a20cc6bb45616708e267e31d61770814583", default-features = false }
+eidos-calibration = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "64ae6a20cc6bb45616708e267e31d61770814583", default-features = false, features = ["std"] }
+eidos-detectors = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "64ae6a20cc6bb45616708e267e31d61770814583" }
 jni = "0.21"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }

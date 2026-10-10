@@ -33,8 +33,8 @@ import org.wpilib.math.geometry.Translation3d;
  * Turns Styx/Eidos detections into PhotonVision's result types, with the same formulas as
  * {@code TrackedTarget} (AprilTag path) and {@code TargetCalculations}, but without OpenCV.
  *
- * <p>Gap: the centre is not undistorted before yaw and pitch are computed (PhotonVision does for
- * calibrated cameras). The corners Eidos reports are in the distorted image.
+ * <p>The centre used for yaw and pitch is undistorted by Eidos (PhotonVision does the same for
+ * calibrated cameras); the area comes from the distorted corners.
  */
 public final class StyxTargetMath {
     private StyxTargetMath() {}
@@ -62,8 +62,9 @@ public final class StyxTargetMath {
 
     public static PhotonTrackedTarget toPhotonTarget(Target t, Intrinsics k) {
         double[] c = t.corners();
-        double centerX = (c[0] + c[2] + c[4] + c[6]) / 4.0;
-        double centerY = (c[1] + c[3] + c[5] + c[7]) / 4.0;
+        // The undistorted centre from Eidos when it has one; else the mean of the corners.
+        double centerX = Double.isFinite(t.center()[0]) ? t.center()[0] : (c[0] + c[2] + c[4] + c[6]) / 4.0;
+        double centerY = Double.isFinite(t.center()[1]) ? t.center()[1] : (c[1] + c[3] + c[5] + c[7]) / 4.0;
         double yaw = Math.atan((centerX - k.cx()) / k.fx());
         double pitch = Math.atan((k.cy() - centerY) / (k.fy() / Math.cos(yaw)));
 

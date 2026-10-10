@@ -7,7 +7,7 @@ use eidos_aruco::ArucoDictionaryKind;
 use eidos_calibration::{
     CalibrationStatus, CameraCalibration, CameraIntrinsics, DistortionCoefficients, KnownTag,
     KnownTagPoses, LensModel, MultiTagPose, MultiTagPoseConfig, MultiTagPoseSolver, PixelCoordinate,
-    PnpRefineConfig, TagCorners, solve_square_pnp,
+    PnpRefineConfig, TagCorners, solve_square_pnp, undistort_points,
 };
 use eidos_core::FrameLease;
 use eidos_detectors::aruco::{TrackedTagArgs, TrackedTagDetector, TrackedTagOutput};
@@ -148,6 +148,20 @@ impl Detector {
                 }
                 _ => ([f64::NAN; 7], None, 0.0, 0.0, 0.0),
             };
+            // The tag centre, undistorted into the same intrinsics (pinhole): what PhotonVision's
+            // yaw and pitch use.
+            let centre_px = PixelCoordinate {
+                u: px.iter().map(|p| p.u).sum::<f64>() / 4.0,
+                v: px.iter().map(|p| p.v).sum::<f64>() / 4.0,
+            };
+            let center = match self.calibration.as_ref() {
+                Some(calibration) => undistort_points(&[centre_px], calibration, calibration.intrinsics)
+                    .first()
+                    .copied()
+                    .flatten()
+                    .map_or([f64::NAN; 2], |p| [p.u, p.v]),
+                None => [f64::NAN; 2],
+            };
             targets.push(TargetRecord {
                 id: det.id as i32,
                 hamming: i32::from(det.hamming_distance),
@@ -158,6 +172,7 @@ impl Detector {
                 ambiguity,
                 rms_best_px: rms_best,
                 rms_alt_px: rms_alt,
+                center,
             });
             quads.push(flat);
             corners_px.push(px);

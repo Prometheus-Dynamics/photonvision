@@ -84,7 +84,7 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
             videoModes.put(3, new FPSRatedVideoMode(PixelFormat.kGray, 640, 400, 120, 240, 1));
             videoModes.put(4, new FPSRatedVideoMode(PixelFormat.kGray, 320, 240, 240, 240, 1));
             videoModes.put(5, new FPSRatedVideoMode(PixelFormat.kGray, 320, 180, 240, 240, 1));
-        } else if (sensorModel == LibCameraJNI.SensorModel.OV9782) {
+        } else if (sensorModel.name().equals("OV9782")) {
             // OV9782 (color + mono) modes.
             videoModes.put(0, new FPSRatedVideoMode(PixelFormat.kBGR, 1280, 800, 120, 120, 1));
             videoModes.put(1, new FPSRatedVideoMode(PixelFormat.kBGR, 1280, 720, 120, 120, 1));
@@ -119,7 +119,7 @@ public class LibcameraGpuSettables extends VisionSourceSettables {
         currentVideoMode = (FPSRatedVideoMode) videoModes.get(0);
 
         if (sensorModel == LibCameraJNI.SensorModel.OV9281
-                || sensorModel == LibCameraJNI.SensorModel.OV9782) {
+                || sensorModel.name().equals("OV9782")) {
             minExposure = 7;
         } else if (sensorModel == LibCameraJNI.SensorModel.OV5647) {
             minExposure = 560;

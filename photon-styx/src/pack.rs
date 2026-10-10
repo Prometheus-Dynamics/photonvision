@@ -1,6 +1,6 @@
 //! The per-frame result as little-endian bytes, decoded by `org.photonvision.styx.StyxResult`.
 //!
-//! Layout (version 1), in order:
+//! Layout (version 2), in order:
 //! - header: `i32 version`, `i64 sequence`, `i64 captureNanos` (CLOCK_BOOTTIME, 0 if unknown),
 //!   `i64 processingNanos`, `i32 width`, `i32 height`, `i32 targetCount`;
 //! - multi-tag: `i32 valid`, `i32 inlierTags`, `f64 rmsPx`, `f64 ambiguity`, `f64[7] pose`
@@ -8,13 +8,14 @@
 //! - `targetCount` records of `i32 id`, `i32 hamming`, `i32 usedInMulti`, `i32 hasAlt`,
 //!   `f64[8] corners` (refined, image pixels, marker order), `f64[7] bestPose`,
 //!   `f64[7] altPose` (both optical camera-from-tag: x, y, z, qw, qx, qy, qz),
-//!   `f64 ambiguity`, `f64 rmsBestPx`, `f64 rmsAltPx`.
+//!   `f64 ambiguity`, `f64 rmsBestPx`, `f64 rmsAltPx`,
+//!   `f64[2] center` (the tag centre undistorted into the pinhole intrinsics; NaN if unknown).
 
-pub const VERSION: i32 = 1;
+pub const VERSION: i32 = 2;
 pub const MAX_TARGETS: usize = 64;
 pub const HEADER_BYTES: usize = 4 + 8 + 8 + 8 + 4 + 4 + 4;
 pub const MULTI_BYTES: usize = 4 + 4 + 8 + 8 + 7 * 8;
-pub const TARGET_BYTES: usize = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8;
+pub const TARGET_BYTES: usize = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8 + 2 * 8;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct MultiRecord {
@@ -36,6 +37,8 @@ pub struct TargetRecord {
     pub ambiguity: f64,
     pub rms_best_px: f64,
     pub rms_alt_px: f64,
+    /// Tag centre, undistorted into the pinhole intrinsics (NaN without calibration).
+    pub center: [f64; 2],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +98,7 @@ pub fn encode(record: &FrameRecord) -> Vec<u8> {
         w.f64(t.ambiguity);
         w.f64(t.rms_best_px);
         w.f64(t.rms_alt_px);
+        w.f64s(&t.center);
     }
     w.0
 }
@@ -136,6 +140,7 @@ mod tests {
                     ambiguity: 0.3,
                     rms_best_px: 0.4,
                     rms_alt_px: 0.6,
+                    center: [320.0, 200.0],
                 },
                 TargetRecord {
                     id: 12,
@@ -147,6 +152,7 @@ mod tests {
                     ambiguity: 0.0,
                     rms_best_px: 0.0,
                     rms_alt_px: 0.0,
+                    center: [f64::NAN; 2],
                 },
             ],
         };
@@ -189,6 +195,7 @@ mod tests {
             ambiguity: 0.0,
             rms_best_px: 0.0,
             rms_alt_px: 0.0,
+            center: [f64::NAN; 2],
         };
         record.targets = vec![one; MAX_TARGETS + 5];
         let bytes = encode(&record);

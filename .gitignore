@@ -161,3 +161,6 @@ photon-client/playwright/.auth/
 shell.nix
 flake.nix
 flake.lock
+
+# Styx Rust crate build output
+photon-styx/target/

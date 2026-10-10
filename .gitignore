@@ -171,3 +171,4 @@ photon-serde-tests/py/
 # SQLite files, except those in test-resources
 *.sqlite*
 !test-resources/**/*.sqlite*
+photon-styx/target/

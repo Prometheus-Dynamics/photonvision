@@ -1,0 +1,44 @@
+# Experimental PhotonVision backend (phase 1): Styx capture + Eidos AprilTag detection,
+# exposed to the JVM through JNI as org.photonvision.styx.StyxJNI. Not a member of any
+# workspace: the PhotonVision Gradle build compiles it through `photon-styx/build.sh`.
+[package]
+name = "photon-styx"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "PhotonVision's Styx + Eidos JNI backend (libphotonstyx.so)"
+publish = false
+
+[workspace]
+
+[lib]
+name = "photonstyx"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Styx is named by branch, the way Eidos and HeliOS name it: cargo unifies styx-core with the
+# copy Eidos depends on only when the git reference matches. Cargo.lock pins it to 1dfc663
+# (origin/dev 1dfc663). Eidos is pinned by rev.
+styx = { git = "https://github.com/Prometheus-Dynamics/Styx.git", branch = "dev", default-features = false, features = ["native", "preview", "codec-turbojpeg"] }
+eidos-core = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false }
+eidos-aruco = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false }
+eidos-calibration = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523", default-features = false, features = ["std"] }
+eidos-detectors = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "496dfef0f40a5df3c9d6abff2923be47d6751523" }
+jni = "0.21"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jpeg-encoder = "0.6"
+
+[features]
+# Eidos's NEON / x86 row kernels (the CM5 build enables NEON through the build script).
+simd = ["eidos-aruco/simd", "eidos-detectors/simd"]
+neon = ["eidos-aruco/neon", "eidos-detectors/neon"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.release.package."*"]
+opt-level = 3

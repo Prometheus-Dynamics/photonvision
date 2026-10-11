@@ -97,7 +97,7 @@ pub extern "system" fn Java_org_photonvision_styx_StyxJNI_open<'l>(
 ) -> jlong {
     guarded(&mut env, "java/lang/IllegalStateException", 0, |env| {
         let camera: String = env.get_string(&camera).map_err(|e| e.to_string())?.into();
-        let opened = Session::open(&camera, width.max(1) as u32, height.max(1) as u32, fps.max(1) as u32)?;
+        let opened = Session::open(&camera, width.max(1) as u32, height.max(1) as u32, fps.max(0) as u32)?;
         let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
         sessions().insert(handle, Arc::new(opened));
         Ok(handle)

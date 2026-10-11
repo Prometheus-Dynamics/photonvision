@@ -15,9 +15,9 @@ use crate::detect::{Detections, Detector};
 use crate::overlay;
 use crate::pack::{self, FrameRecord, MultiRecord, TargetRecord};
 
-/// The raw preview: at most 640x400, 15 fps, JPEG quality 70 (encoded off the vision thread).
+/// The raw preview: at most 640x400, 30 fps, JPEG quality 70 (encoded off the vision thread).
 const PREVIEW_MAX_SIZE: (u32, u32) = (640, 400);
-const PREVIEW_FPS: f32 = 15.0;
+const PREVIEW_FPS: f32 = 30.0;
 const PREVIEW_QUALITY: u8 = 70;
 const PROCESSED_QUALITY: u8 = 70;
 

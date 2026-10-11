@@ -19,10 +19,12 @@ package org.photonvision.common.configuration;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import edu.wpi.first.cscore.UsbCameraInfo;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
@@ -209,5 +211,44 @@ public class SQLConfigTest {
         }
 
         ConfigManager.INSTANCE = null;
+    }
+
+    @Test
+    public void testImageHardwareConfigDefault() throws IOException {
+        var configDir = tmpDir.resolve("image_hw_config");
+        Files.createDirectories(configDir);
+        // An OS image's hardwareConfig.json
+        Files.writeString(
+                configDir.resolve("hardwareConfig.json"),
+                """
+                {
+                  "deviceName": "Raze",
+                  "supportURL": "https://example.com",
+                  "ledPins": [13],
+                  "ledsCanDim": true,
+                  "ledBrightnessRange": [0, 100],
+                  "statusRGBPins": [101, 102, 103],
+                  "statusRGBActiveHigh": true,
+                  "setGPIOCommand": "echo {s} > /run/led-{p}",
+                  "vendorFOV": -1
+                }
+                """);
+
+        var cfgLoader = new SqlConfigProvider(configDir);
+        cfgLoader.load();
+        var hw = cfgLoader.getConfig().getHardwareConfig();
+        assertEquals("Raze", hw.deviceName);
+        assertEquals(List.of(13), hw.ledPins);
+        assertEquals("echo {s} > /run/led-{p}", hw.setGPIOCommand);
+        assertEquals(List.of(101, 102, 103), hw.statusRGBPins);
+        assertTrue(hw.statusRGBActiveHigh);
+
+        // An uploaded (saved) hardware config takes precedence over the image's file
+        var upload = tmpDir.resolve("uploaded_hardwareConfig.json");
+        Files.writeString(upload, "{\"deviceName\": \"Saved\"}");
+        assertTrue(cfgLoader.saveUploadedHardwareConfig(upload));
+        var reloaded = new SqlConfigProvider(configDir);
+        reloaded.load();
+        assertEquals("Saved", reloaded.getConfig().getHardwareConfig().deviceName);
     }
 }

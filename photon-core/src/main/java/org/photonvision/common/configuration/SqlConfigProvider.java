@@ -256,9 +256,9 @@ public class SqlConfigProvider extends ConfigProvider {
     }
 
     /**
-     * The hardware config to use when the database has none. An OS image can ship its board's
-     * config (LED commands, vendor FOV, ...) as hardwareConfig.json in the config folder; it applies
-     * until a hardware config is uploaded or saved.
+     * The hardware config to use when the database has none. An OS image can ship its board's config
+     * (LED commands, vendor FOV, ...) as hardwareConfig.json in the config folder; it applies until a
+     * hardware config is uploaded or saved.
      */
     private HardwareConfig defaultHardwareConfig() {
         var file = rootPath.resolve(ConfigManager.HW_CFG_FNAME);
@@ -324,10 +324,7 @@ public class SqlConfigProvider extends ConfigProvider {
         synchronized (m_mutex) {
             var hardwareConfig =
                     loadConfigOrDefault(
-                            conn,
-                            GlobalKeys.HARDWARE_CONFIG,
-                            HardwareConfig.class,
-                            this::defaultHardwareConfig);
+                            conn, GlobalKeys.HARDWARE_CONFIG, HardwareConfig.class, this::defaultHardwareConfig);
             var hardwareSettings =
                     loadConfigOrDefault(
                             conn, GlobalKeys.HARDWARE_SETTINGS, HardwareSettings.class, HardwareSettings::new);

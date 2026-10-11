@@ -94,6 +94,9 @@ public final class StyxMjpegServer implements AutoCloseable {
     private void serve(OutputStream out, com.sun.net.httpserver.HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().add("Content-Type", "multipart/x-mixed-replace; boundary=" + BOUNDARY);
         exchange.getResponseHeaders().add("Cache-Control", "no-cache");
+        // The UI loads the stream into an <img crossorigin="anonymous"> on another port, which the
+        // browser shows only with this header (cscore's MJPEG server sends it too).
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         exchange.sendResponseHeaders(200, 0);
         long seen = -1;
         try {

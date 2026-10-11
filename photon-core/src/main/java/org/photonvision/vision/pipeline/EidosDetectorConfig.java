@@ -44,9 +44,13 @@ final class EidosDetectorConfig {
                         ? "tag16h5" : "tag36h11")
                 .append('"');
         sb.append(",\"tagSizeM\":").append(num(tagSizeMeters(settings)));
-        sb.append(",\"multiTag\":").append(settings.doMultiTarget);
+        sb.append(",\"multiTag\":").append(settings.doMultiTarget && settings.solvePNPEnabled);
         sb.append(",\"fullSearchEvery\":").append(Math.max(1, settings.fullSearchEvery));
         sb.append(",\"processedStream\":").append(settings.processedStream);
+        sb.append(",\"draw\":").append(settings.outputShouldDraw);
+        sb.append(",\"solvePnp\":").append(settings.solvePNPEnabled);
+        sb.append(",\"streamDivisor\":")
+                .append(settings.streamingFrameDivisor == null ? 1 : settings.streamingFrameDivisor.value);
         CameraCalibrationCoefficients cal = props == null ? null : props.cameraCalibration;
         if (cal != null) {
             double[] k = cal.getIntrinsicsArr(); // row-major 3x3: fx 0 cx / 0 fy cy / 0 0 1
@@ -69,7 +73,7 @@ final class EidosDetectorConfig {
             sb.append(",\"fisheye\":").append(fisheye);
             sb.append('}');
         }
-        if (settings.doMultiTarget) {
+        if (settings.doMultiTarget && settings.solvePNPEnabled) {
             sb.append(",\"fieldTags\":[");
             boolean first = true;
             Field field = ConfigProvider.getInstance().getConfig().getFieldLayout();

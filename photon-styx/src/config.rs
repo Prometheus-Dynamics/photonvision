@@ -21,9 +21,28 @@ pub struct PipelineConfig {
     /// A full-frame search at least every this many frames (Eidos tracking).
     #[serde(default = "default_full_search")]
     pub full_search_every: u32,
-    /// Also encode the processed stream (the grey frame with the detected tags outlined).
+    /// Also encode the processed stream (the frame with the detected tags drawn), while someone
+    /// watches it.
     #[serde(default)]
     pub processed_stream: bool,
+    /// Draw the detections on the processed stream (PhotonVision's "draw on the output").
+    #[serde(default = "yes")]
+    pub draw: bool,
+    /// Solve poses (PhotonVision's 3D mode); also draws the 3D box. Needs `calibration`.
+    #[serde(default = "yes")]
+    pub solve_pnp: bool,
+    /// PhotonVision's stream divisor (1, 2, 4, 6): the processed stream is the frame divided by
+    /// this (and at most 640 pixels wide).
+    #[serde(default = "one")]
+    pub stream_divisor: u32,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn one() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -128,6 +147,8 @@ mod tests {
         assert_eq!(minimal.family, "tag36h11");
         assert_eq!(minimal.full_search_every, 8);
         assert!(minimal.calibration.is_none());
+        assert!(minimal.draw && minimal.solve_pnp);
+        assert_eq!(minimal.stream_divisor, 1);
 
         let full = PipelineConfig::parse(
             r#"{"family":"tag16h5","tagSizeM":0.15,"multiTag":true,

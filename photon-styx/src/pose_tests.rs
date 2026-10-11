@@ -164,3 +164,18 @@ fn distortion_model_is_carried_through() {
     };
     assert_eq!(cal.lens_model, LensModel::Fisheye);
 }
+
+#[test]
+fn the_3d_box_rises_from_the_tag_towards_the_camera() {
+    // A 0.2 m tag 2 m straight ahead, facing the camera (Eidos tag frame = camera axes).
+    let cal = calibration();
+    let camera_from_tag = eidos_calibration::Se3Transform {
+        rotation: eidos_calibration::RotationMatrix3 { m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] },
+        translation: eidos_calibration::Translation3 { x: 0.0, y: 0.0, z: 2.0 },
+    };
+    let top = crate::detect::box_top(&camera_from_tag, 0.2, &cal).expect("in front of the camera");
+    // The far face is 1.8 m away: corner 0 (top-left) at -0.1 / 1.8 * 800 from the centre.
+    assert_close(top[0], 640.0 - 0.1 / 1.8 * 800.0, 1e-9, "u");
+    assert_close(top[1], 400.0 - 0.1 / 1.8 * 800.0, 1e-9, "v");
+    assert_close(top[4], 640.0 + 0.1 / 1.8 * 800.0, 1e-9, "u2");
+}

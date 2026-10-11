@@ -37,6 +37,9 @@ public class CVPipelineResult implements Releasable {
      * {@link #targets} is empty.
      */
     public List<org.photonvision.targeting.PhotonTrackedTarget> photonTargets = null;
+
+    /** The Styx/Eidos result behind {@link #photonTargets} (timings for the UI), or null. */
+    public org.photonvision.styx.StyxResult styxResult = null;
     public final Frame inputAndOutputFrame;
     public Optional<MultiTargetPNPResult> multiTagResult;
     public final List<String> objectDetectionClassNames;

@@ -70,7 +70,9 @@ public class StyxFrameProvider extends FrameProvider {
         }
         badFrameCounter = 0;
 
+        long received = StyxJNI.nowBoottimeNanos();
         StyxResult result = StyxResult.decode(bytes);
+        result.stages()[StyxResult.STAGE_JAVA_RECEIVED] = received;
         ++sequenceID;
         // Styx stamps the start of the frame on the boottime clock; PhotonVision's timestamps are on
         // the NetworkTables clock, so the latency is subtracted from now.

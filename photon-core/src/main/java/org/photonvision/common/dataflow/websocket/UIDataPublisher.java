@@ -25,6 +25,9 @@ import org.photonvision.common.dataflow.events.OutgoingUIEvent;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.SerializationUtils;
+import org.photonvision.styx.StyxJNI;
+import org.photonvision.styx.StyxResult;
+import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
 import org.photonvision.vision.pipeline.result.CalibrationPipelineResult;
 import org.photonvision.vision.pipeline.result.FocusPipelineResult;
@@ -55,9 +58,25 @@ public class UIDataPublisher implements CVPipelineResultConsumer {
         // We don't actually need to send targets during calibration and it can take up a lot (up to
         // 1.2Mbps for 60 snapshots) of target results with no pitch/yaw/etc set
         if (!(result instanceof CalibrationPipelineResult)) {
-            for (var t : result.targets) {
-                uiTargets.add(t.toHashMap());
+            if (result.photonTargets != null) {
+                // The Styx backend's targets (no TrackedTarget behind them).
+                for (var t : result.photonTargets) {
+                    uiTargets.add(photonTargetToHashMap(t));
+                }
+            } else {
+                for (var t : result.targets) {
+                    uiTargets.add(t.toHashMap());
+                }
             }
+        }
+        dataMap.put("processingMillis", result.getProcessingMillis());
+        if (result.styxResult != null) {
+            // Eidos's own time for the frame (detection, poses), in the camera session.
+            dataMap.put("detectMillis", result.styxResult.processingNanos() / 1e6);
+            long[] stages = result.styxResult.stages();
+            // NetworkTables has published this result (its consumer runs before this one).
+            stages[StyxResult.STAGE_PUBLISHED] = StyxJNI.nowBoottimeNanos();
+            dataMap.put("stages", stageMillis(stages));
         }
 
         dataMap.put("targets", uiTargets);
@@ -85,5 +104,38 @@ public class UIDataPublisher implements CVPipelineResultConsumer {
         DataChangeService.getInstance()
                 .publishEvent(OutgoingUIEvent.wrappedOf("updatePipelineResult", uiMap));
         lastUIResultUpdateTime = now;
+    }
+
+    private static final String[] STAGE_NAMES = {
+        "sensor", "dequeued", "ispDone", "queued", "taken", "detectStart", "detectEnd", "packed",
+        "javaReceived", "published"
+    };
+
+    /** Each known stage of a Styx frame, in ms after the sensor's start of frame. */
+    static Map<String, Object> stageMillis(long[] stages) {
+        var out = new HashMap<String, Object>();
+        long origin = stages[StyxResult.STAGE_SENSOR];
+        if (origin == 0) return out;
+        for (int i = 1; i < stages.length && i < STAGE_NAMES.length; i++) {
+            if (stages[i] != 0) out.put(STAGE_NAMES[i], (stages[i] - origin) / 1e6);
+        }
+        return out;
+    }
+
+    /** The keys {@code TrackedTarget.toHashMap()} sends, from a PhotonTrackedTarget. */
+    static HashMap<String, Object> photonTargetToHashMap(PhotonTrackedTarget t) {
+        var ret = new HashMap<String, Object>();
+        ret.put("pitch", t.getPitch());
+        ret.put("yaw", t.getYaw());
+        ret.put("skew", t.getSkew());
+        ret.put("area", t.getArea());
+        ret.put("ambiguity", t.getPoseAmbiguity());
+        ret.put("confidence", t.getDetectedObjectConfidence());
+        ret.put("classId", t.getDetectedObjectClassID());
+        if (t.getBestCameraToTarget() != null) {
+            ret.put("pose", SerializationUtils.transformToHashMap(t.getBestCameraToTarget()));
+        }
+        ret.put("fiducialId", t.getFiducialId());
+        return ret;
     }
 }

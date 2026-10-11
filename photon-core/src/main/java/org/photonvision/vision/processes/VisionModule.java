@@ -172,7 +172,7 @@ public class VisionModule {
         addResultConsumer(statusLEDsConsumer);
         addResultConsumer(
                 (result) ->
-                        lastPipelineResultBestTarget = result.hasTargets() ? result.targets.get(0) : null);
+                        lastPipelineResultBestTarget = result.targets.isEmpty() ? null : result.targets.get(0));
 
         // Sync VisionModule state with the first pipeline index
         setPipeline(visionSource.getSettables().getConfiguration().currentPipelineIndex);
@@ -705,7 +705,6 @@ public class VisionModule {
         // Pipelines like DriverMode and Calibrate3dPipeline have null output frames
         if (result.inputAndOutputFrame instanceof StyxFrame) {
             // Styx frames have no Mats: the streams are served from the camera session.
-            consumePipelineResult(result);
             result.release();
             return;
         }

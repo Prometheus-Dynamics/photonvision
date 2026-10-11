@@ -1,8 +1,11 @@
 //! The per-frame result as little-endian bytes, decoded by `org.photonvision.styx.StyxResult`.
 //!
-//! Layout (version 2), in order:
+//! Layout (version 3), in order:
 //! - header: `i32 version`, `i64 sequence`, `i64 captureNanos` (CLOCK_BOOTTIME, 0 if unknown),
 //!   `i64 processingNanos`, `i32 width`, `i32 height`, `i32 targetCount`;
+//! - stages: `i64[STAGES]`, when the frame passed each step (CLOCK_BOOTTIME ns, 0 if unknown):
+//!   sensor start of frame, dequeued from the receiver (end of readout), ISP done, queued for the
+//!   consumer, taken by the vision thread, detection start, detection end, result packed;
 //! - multi-tag: `i32 valid`, `i32 inlierTags`, `f64 rmsPx`, `f64 ambiguity`, `f64[7] pose`
 //!   (WPILib camera pose in the field frame: x, y, z, qw, qx, qy, qz);
 //! - `targetCount` records of `i32 id`, `i32 hamming`, `i32 usedInMulti`, `i32 hasAlt`,
@@ -11,9 +14,10 @@
 //!   `f64 ambiguity`, `f64 rmsBestPx`, `f64 rmsAltPx`,
 //!   `f64[2] center` (the tag centre undistorted into the pinhole intrinsics; NaN if unknown).
 
-pub const VERSION: i32 = 2;
+pub const VERSION: i32 = 3;
+pub const STAGES: usize = 8;
 pub const MAX_TARGETS: usize = 64;
-pub const HEADER_BYTES: usize = 4 + 8 + 8 + 8 + 4 + 4 + 4;
+pub const HEADER_BYTES: usize = 4 + 8 + 8 + 8 + 4 + 4 + 4 + STAGES * 8;
 pub const MULTI_BYTES: usize = 4 + 4 + 8 + 8 + 7 * 8;
 pub const TARGET_BYTES: usize = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8 + 2 * 8;
 
@@ -46,6 +50,8 @@ pub struct FrameRecord {
     pub sequence: i64,
     pub capture_nanos: i64,
     pub processing_nanos: i64,
+    /// See the module documentation (CLOCK_BOOTTIME ns, 0 if unknown).
+    pub stages: [i64; STAGES],
     pub width: i32,
     pub height: i32,
     pub multi: MultiRecord,
@@ -82,6 +88,9 @@ pub fn encode(record: &FrameRecord) -> Vec<u8> {
     w.i32(record.width);
     w.i32(record.height);
     w.i32(targets.len() as i32);
+    for &stage in &record.stages {
+        w.i64(stage);
+    }
     w.i32(record.multi.valid as i32);
     w.i32(record.multi.inlier_tags);
     w.f64(record.multi.rms_px);
@@ -120,6 +129,7 @@ mod tests {
             sequence: 7,
             capture_nanos: 123_456,
             processing_nanos: 900,
+            stages: [1, 2, 3, 4, 5, 6, 7, 8],
             width: 1280,
             height: 800,
             multi: MultiRecord {
@@ -160,6 +170,8 @@ mod tests {
         assert_eq!(bytes.len(), HEADER_BYTES + MULTI_BYTES + 2 * TARGET_BYTES);
         assert_eq!(i32_at(&bytes, 0), VERSION);
         assert_eq!(i32_at(&bytes, 36), 2); // target count
+        assert_eq!(i64::from_le_bytes(bytes[40..48].try_into().unwrap()), 1); // first stage
+        assert_eq!(i64::from_le_bytes(bytes[96..104].try_into().unwrap()), 8); // last stage
         let multi = HEADER_BYTES;
         assert_eq!(i32_at(&bytes, multi), 1);
         assert_eq!(f64_at(&bytes, multi + 16), 0.25);
@@ -180,6 +192,7 @@ mod tests {
             sequence: 0,
             capture_nanos: 0,
             processing_nanos: 0,
+            stages: [0; STAGES],
             width: 0,
             height: 0,
             multi: MultiRecord::default(),

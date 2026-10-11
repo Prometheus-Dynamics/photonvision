@@ -18,6 +18,7 @@ package org.photonvision.vision.camera.csi;
 
 import org.photonvision.common.configuration.CameraConfiguration;
 import org.photonvision.vision.camera.CameraType;
+import org.photonvision.vision.camera.QuirkyCamera;
 import org.photonvision.vision.frame.FrameProvider;
 import org.photonvision.vision.frame.provider.StyxFrameProvider;
 import org.photonvision.vision.processes.VisionSource;
@@ -33,6 +34,9 @@ public class StyxCameraSource extends VisionSource {
         if (configuration.matchedCameraInfo.type() != CameraType.ZeroCopyPicam) {
             throw new IllegalArgumentException("StyxCameraSource only accepts CSI (ZeroCopyPicam) cameras");
         }
+        // The same quirks as a libcamera CSI camera (LibcameraGpuSource): a fresh configuration
+        // (a camera assigned from the UI) has none, and VisionModule reads them.
+        if (configuration.cameraQuirks == null) configuration.cameraQuirks = QuirkyCamera.ZeroCopyPiCamera;
         settables = new StyxSettables(configuration);
         frameProvider = new StyxFrameProvider(settables);
     }

@@ -17,6 +17,10 @@
 package org.photonvision.styx;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.jni.CombinedRuntimeLoader;
@@ -44,9 +48,15 @@ public final class StyxJNI {
 
     private StyxJNI() {}
 
+    /** Where the build puts the library in the jar (photon-core/build.gradle, -PstyxBackend). */
+    private static final String RESOURCE = "/linux/arm64/libphotonstyx.so";
+
     /**
      * Load libphotonstyx: from {@code -Dphotonvision.styx.library=/path/libphotonstyx.so} when set,
-     * otherwise from the jar's native resources.
+     * otherwise from the jar's native resources. The library is not in the jar's
+     * ResourceInformation.json (the WPILib plugin writes that from its own natives), so when
+     * CombinedRuntimeLoader cannot find it the jar entry is copied to java.io.tmpdir and loaded from
+     * there.
      */
     public static synchronized void load() throws IOException {
         if (loaded) return;
@@ -54,10 +64,26 @@ public final class StyxJNI {
         if (override != null && !override.isBlank()) {
             System.load(override);
         } else {
-            CombinedRuntimeLoader.loadLibraries(StyxJNI.class, "photonstyx");
+            try {
+                CombinedRuntimeLoader.loadLibraries(StyxJNI.class, "photonstyx");
+            } catch (IOException e) {
+                System.load(extractResource().toString());
+            }
         }
         loaded = true;
         logger.info("Loaded libphotonstyx");
+    }
+
+    private static Path extractResource() throws IOException {
+        try (InputStream in = StyxJNI.class.getResourceAsStream(RESOURCE)) {
+            if (in == null) throw new IOException("Could not find library photonstyx (" + RESOURCE + ")");
+            Path dir = Files.createTempDirectory("photonstyx");
+            Path lib = dir.resolve("libphotonstyx.so");
+            Files.copy(in, lib, StandardCopyOption.REPLACE_EXISTING);
+            lib.toFile().deleteOnExit();
+            dir.toFile().deleteOnExit();
+            return lib;
+        }
     }
 
     public static synchronized boolean isLoaded() {

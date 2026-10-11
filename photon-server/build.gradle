@@ -38,6 +38,10 @@ shadowJar {
 
 node {
     nodeProjectDir = file("${projectDir}/../photon-client")
+    // Without a version the plugin installs pnpm@latest; pnpm 11+ fails the
+    // install on the ignored build scripts (ERR_PNPM_IGNORED_BUILDS). Upstream
+    // CI builds the client with pnpm 10.
+    pnpmVersion = "10.34.6"
 }
 
 def docsBuildDir = file("${rootDir}/docs/build/html")

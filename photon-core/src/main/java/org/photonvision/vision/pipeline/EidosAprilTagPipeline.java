@@ -29,6 +29,7 @@ import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.vision.frame.Frame;
 import org.photonvision.vision.frame.FrameThresholdType;
 import org.photonvision.vision.frame.StyxFrame;
+import org.photonvision.vision.pipe.impl.CalculateFPSPipe;
 import org.photonvision.vision.pipeline.result.CVPipelineResult;
 
 /**
@@ -45,6 +46,8 @@ public class EidosAprilTagPipeline
     /** The last configuration sent to the native session, so it is sent only on change. */
     private String sentConfig = null;
     private long sentHandle = 0;
+
+    private final CalculateFPSPipe calculateFPSPipe = new CalculateFPSPipe();
 
     public EidosAprilTagPipeline() {
         super(PROCESSING_TYPE);
@@ -83,30 +86,30 @@ public class EidosAprilTagPipeline
 
         StyxResult result = styxFrame.result;
         var intrinsics = intrinsics(frame);
+        // Poses only in 3D mode, as PhotonVision's AprilTag pipeline (and only with a calibration,
+        // without which Eidos solves none).
+        boolean withPose = settings.solvePNPEnabled;
         List<PhotonTrackedTarget> targets = new ArrayList<>();
         for (StyxResult.Target t : result.targets()) {
             if (t.hamming() > settings.hammingDist) continue;
-            targets.add(StyxTargetMath.toPhotonTarget(t, intrinsics));
+            targets.add(StyxTargetMath.toPhotonTarget(t, intrinsics, withPose));
         }
         if (targets.size() > MAX_TARGETS) {
             targets = targets.subList(0, MAX_TARGETS);
         }
 
         Optional<MultiTargetPNPResult> multi = Optional.empty();
-        if (settings.doMultiTarget && result.multiValid()) {
+        if (withPose && settings.doMultiTarget && result.multiValid()) {
             multi = Optional.of(StyxTargetMath.toMultiTarget(result));
         }
 
-        double processingNanos = System.nanoTime() - started;
-        var out =
-                new CVPipelineResult(
-                        frame.sequenceID,
-                        processingNanos,
-                        0,
-                        List.of(),
-                        multi,
-                        frame);
+        // Processing time: Eidos's detection (and pose) time in the camera session, plus this
+        // conversion.
+        double processingNanos = result.processingNanos() + (System.nanoTime() - started);
+        int fps = calculateFPSPipe.run(null).output;
+        var out = new CVPipelineResult(frame.sequenceID, processingNanos, fps, List.of(), multi, frame);
         out.photonTargets = targets;
+        out.styxResult = result;
         return out;
     }
 

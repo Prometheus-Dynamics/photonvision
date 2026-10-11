@@ -26,7 +26,8 @@ import org.photonvision.vision.pipeline.result.CVPipelineResult;
  * AprilTag pipeline runs Eidos ({@link EidosAprilTagPipeline}) with the AprilTag settings the UI
  * edits: the tag family, hamming distance and multi-target settings carry over, and "draw on the
  * output" turns the processed stream on. The decimate, blur, threads and refinement settings are
- * OpenCV detector settings and do not apply.
+ * OpenCV detector settings and do not apply. 3D mode (solvePNPEnabled) turns the pose solve,
+ * the multi-tag solve and the 3D box on the processed stream on.
  */
 public class StyxAprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagPipelineSettings> {
     private final EidosAprilTagPipeline eidos = new EidosAprilTagPipeline();
@@ -47,7 +48,12 @@ public class StyxAprilTagPipeline extends CVPipeline<CVPipelineResult, AprilTagP
         eidosSettings.hammingDist = settings.hammingDist;
         eidosSettings.doMultiTarget = settings.doMultiTarget;
         eidosSettings.doSingleTargetAlways = settings.doSingleTargetAlways;
-        eidosSettings.processedStream = settings.outputShouldDraw;
+        eidosSettings.solvePNPEnabled = settings.solvePNPEnabled;
+        eidosSettings.outputShouldDraw = settings.outputShouldDraw;
+        eidosSettings.streamingFrameDivisor = settings.streamingFrameDivisor;
+        // The processed stream is always there (only the drawing follows "draw on the output"), as
+        // on PhotonVision's other pipelines; it is encoded only while someone watches it.
+        eidosSettings.processedStream = true;
         eidos.setPipeParams(frame.frameStaticProperties, eidosSettings, cameraQuirks);
         return eidos.process(frame, eidosSettings);
     }

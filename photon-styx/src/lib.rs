@@ -12,6 +12,8 @@ pub mod pack;
 pub mod session;
 
 #[cfg(test)]
+mod e2e_tests;
+#[cfg(test)]
 mod pose_tests;
 
 use std::collections::HashMap;

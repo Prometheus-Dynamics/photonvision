@@ -7,7 +7,8 @@ use eidos_aruco::ArucoDictionaryKind;
 use eidos_calibration::{
     CalibrationStatus, CameraCalibration, CameraIntrinsics, DistortionCoefficients, KnownTag,
     KnownTagPoses, LensModel, MultiTagPose, MultiTagPoseConfig, MultiTagPoseSolver, PixelCoordinate,
-    PnpRefineConfig, TagCorners, solve_square_pnp, undistort_points,
+    PnpRefineConfig, Point3, Se3Transform, TagCorners, project_camera_point, solve_square_pnp,
+    square_object_corners, transform_point, undistort_points,
 };
 use eidos_core::FrameLease;
 use eidos_detectors::aruco::{TrackedTagArgs, TrackedTagDetector, TrackedTagOutput};
@@ -19,11 +20,40 @@ use crate::geometry::{eidos_reference_from_tag, pose_array, se3_from_wpilib, wpi
 use crate::pack::{MultiRecord, TargetRecord};
 
 /// What one frame produced.
+#[derive(Default)]
 pub struct Detections {
     pub targets: Vec<TargetRecord>,
     pub multi: MultiRecord,
-    /// Refined corners of every target, for overlays (same order as `targets`).
-    pub quads: Vec<[f64; 8]>,
+    /// What the processed stream draws for each target (same order as `targets`).
+    pub overlays: Vec<Overlay>,
+}
+
+/// One tag as the processed stream draws it, in full-frame pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Overlay {
+    pub id: i32,
+    /// Refined corners, marker order (`[u0, v0, ..., u3, v3]`).
+    pub corners: [f64; 8],
+    /// In 3D mode: the corners of the box's far face, one tag edge out of the tag towards the
+    /// camera (PhotonVision's 3D box), projected through the calibration. Same order as `corners`.
+    pub top: Option<[f64; 8]>,
+}
+
+/// The far face of the 3D box on a tag of edge `side` at `camera_from_tag` (Eidos tag frame: z
+/// into the tag, so the box rises along -z), projected to distorted pixels.
+pub fn box_top(camera_from_tag: &Se3Transform, side: f64, calibration: &CameraCalibration) -> Option<[f64; 8]> {
+    let mut out = [0.0; 8];
+    for (i, corner) in square_object_corners(side).into_iter().enumerate() {
+        let lifted = Point3 { x: corner.x, y: corner.y, z: -side };
+        let p = transform_point(camera_from_tag, lifted);
+        if p.z <= 1e-6 {
+            return None;
+        }
+        let px = project_camera_point(p, *calibration)?;
+        out[2 * i] = px.u;
+        out[2 * i + 1] = px.v;
+    }
+    Some(out)
 }
 
 pub struct Detector {
@@ -118,7 +148,8 @@ impl Detector {
         let kept = &self.out.validated.kept.items;
         let refined = &self.out.refined.items;
         let mut targets = Vec::with_capacity(kept.len());
-        let mut quads = Vec::with_capacity(kept.len());
+        let mut overlays = Vec::with_capacity(kept.len());
+        let solve = self.config.solve_pnp;
         let mut corners_px: Vec<[PixelCoordinate; 4]> = Vec::with_capacity(kept.len());
 
         for (i, det) in kept.iter().enumerate() {
@@ -132,17 +163,23 @@ impl Detector {
             let flat = [
                 px[0].u, px[0].v, px[1].u, px[1].v, px[2].u, px[2].v, px[3].u, px[3].v,
             ];
-            let (best, alt, ambiguity, rms_best, rms_alt) = match (&self.calibration, self.config.calibration.is_some()) {
-                (Some(calibration), true) => {
+            let mut top = None;
+            let (best, alt, ambiguity, rms_best, rms_alt) = match &self.calibration {
+                Some(calibration) if solve => {
                     let side = self.config.tag_size_for(det.id);
                     match solve_square_pnp(&px, side, calibration, PnpRefineConfig::default()) {
-                        Some(solution) => (
-                            pose_array(&solution.best.camera_from_object),
-                            solution.alternative.map(|a| pose_array(&a.camera_from_object)),
-                            solution.ambiguity,
-                            solution.best.rms_px,
-                            solution.alternative.map_or(0.0, |a| a.rms_px),
-                        ),
+                        Some(solution) => {
+                            if self.config.draw {
+                                top = box_top(&solution.best.camera_from_object, side, calibration);
+                            }
+                            (
+                                pose_array(&solution.best.camera_from_object),
+                                solution.alternative.map(|a| pose_array(&a.camera_from_object)),
+                                solution.ambiguity,
+                                solution.best.rms_px,
+                                solution.alternative.map_or(0.0, |a| a.rms_px),
+                            )
+                        }
                         None => ([f64::NAN; 7], None, 0.0, 0.0, 0.0),
                     }
                 }
@@ -174,12 +211,13 @@ impl Detector {
                 rms_alt_px: rms_alt,
                 center,
             });
-            quads.push(flat);
+            overlays.push(Overlay { id: det.id as i32, corners: flat, top });
             corners_px.push(px);
         }
 
         let mut multi = MultiRecord::default();
         if let (Some(solver), Some(calibration)) = (self.solver.as_mut(), self.calibration.as_ref())
+            && solve
             && calibration.status() != CalibrationStatus::Uncalibrated
         {
             self.observations.clear();
@@ -212,6 +250,6 @@ impl Detector {
             }
         }
 
-        Ok(Detections { targets, multi, quads })
+        Ok(Detections { targets, multi, overlays })
     }
 }

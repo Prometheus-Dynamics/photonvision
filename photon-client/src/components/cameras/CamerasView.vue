@@ -54,6 +54,9 @@ const fpsTooLow = computed<boolean>(() => {
           >
             &nbsp;{{ Math.round(useStateStore().currentPipelineResults?.fps || 0) }}&nbsp;FPS &ndash;
             {{ Math.min(Math.round(useStateStore().currentPipelineResults?.latency || 0), 9999) }} ms latency
+            <template v-if="useStateStore().currentPipelineResults?.detectMillis !== undefined">
+              (detect {{ (useStateStore().currentPipelineResults?.detectMillis ?? 0).toFixed(2) }} ms)
+            </template>
           </span>
         </v-chip>
         <v-chip v-else label color="red" variant="text" style="font-size: 1rem; padding: 0; margin: 0">

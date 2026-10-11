@@ -81,4 +81,6 @@ export interface PipelineResult {
   multitagResult?: MultitagResult;
   // Object detection class names -- empty if not doing object detection
   classNames: string[];
+  // Styx backend: Eidos's detection time for the frame (ms)
+  detectMillis?: number;
 }

@@ -2,24 +2,38 @@
 //! PiSP ISP), the Eidos detector, the raw JPEG preview and the processed JPEG. Follows the
 //! reference flow in Styx's `pv_capture` (styx-cm5-prep): frames are offered to the preview
 //! with `offer_owned`, so a lease is released as soon as the detector has read it.
+//!
+//! The vision thread only detects: both streams are encoded on threads of their own, at most
+//! [`STREAM_FPS`] frames a second, only while someone watches, and from the newest frame only (a
+//! slow viewer never holds up capture or detection).
 
-use std::sync::{Condvar, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use styx::capture_api::StandardControls;
+use styx::codec::jpeg_planar::{JpegBackend, JpegInput, PlanarJpegEncoder};
+use styx::core::prelude::Hop;
 use styx::prelude::*;
 use styx::preview::{Preview, PreviewConfig, PreviewSubscriber};
 
 use crate::config::PipelineConfig;
-use crate::detect::{Detections, Detector};
-use crate::overlay;
-use crate::pack::{self, FrameRecord, MultiRecord, TargetRecord};
+use crate::detect::{Detections, Detector, Overlay};
+use crate::overlay::{self, Canvas};
+use crate::pack::{self, FrameRecord, STAGES};
 
 /// The raw preview: at most 640x400, 30 fps, JPEG quality 70 (encoded off the vision thread).
 const PREVIEW_MAX_SIZE: (u32, u32) = (640, 400);
-const PREVIEW_FPS: f32 = 30.0;
 const PREVIEW_QUALITY: u8 = 70;
+/// Most frames a second either stream sends (the link to the viewer is the limit, not the
+/// camera: 120 fps of JPEGs swamps it).
+pub const STREAM_FPS: f32 = 30.0;
 const PROCESSED_QUALITY: u8 = 70;
+/// The processed stream is at most this wide (the raw preview's size).
+const PROCESSED_MAX_WIDTH: usize = 640;
+/// A stream nobody asked for in this long stops being produced.
+const WATCH_TIMEOUT_NS: u64 = 2_000_000_000;
 
 /// Control kinds for [`Session::set_control`] (mirrored in `StyxJNI.java`).
 pub const CONTROL_EXPOSURE_US: i32 = 1;
@@ -46,17 +60,178 @@ fn control_number(value: &ControlValue) -> f64 {
     }
 }
 
-#[derive(Default)]
 struct Latest {
     seq: u64,
     taken: u64,
     jpeg: Vec<u8>,
 }
 
+/// A frame for the processed stream: a share of the frame (released as soon as its luma is
+/// copied) and what to draw on it.
+struct Job {
+    frame: FrameLease,
+    overlays: Vec<Overlay>,
+    draw: bool,
+    divisor: u32,
+}
+
+/// The processed stream's encoder thread and its hand-offs.
+struct Processed {
+    job: Mutex<Option<Job>>,
+    job_ready: Condvar,
+    out: Mutex<Latest>,
+    out_ready: Condvar,
+    /// CLOCK_MONOTONIC ns until which someone watches (see [`WATCH_TIMEOUT_NS`]).
+    watched_until: AtomicU64,
+    /// CLOCK_MONOTONIC ns of the last frame handed to the encoder (the rate cap).
+    last_offer: AtomicU64,
+    stop: AtomicBool,
+}
+
+impl Processed {
+    fn new() -> Self {
+        Self {
+            job: Mutex::new(None),
+            job_ready: Condvar::new(),
+            out: Mutex::new(Latest { seq: 0, taken: 0, jpeg: Vec::new() }),
+            out_ready: Condvar::new(),
+            watched_until: AtomicU64::new(0),
+            last_offer: AtomicU64::new(0),
+            stop: AtomicBool::new(false),
+        }
+    }
+
+    /// Whether the vision thread should hand this frame over (watched, and due by the rate cap).
+    fn due(&self, now: u64) -> bool {
+        if now > self.watched_until.load(Ordering::Relaxed) {
+            return false;
+        }
+        let interval = (1e9 / f64::from(STREAM_FPS)) as u64;
+        let last = self.last_offer.load(Ordering::Relaxed);
+        // A little slack, so a 60 fps camera is not halved to 20 fps by jitter.
+        if now.saturating_sub(last) + interval / 8 < interval {
+            return false;
+        }
+        self.last_offer.store(now, Ordering::Relaxed);
+        true
+    }
+
+    fn put(&self, job: Job) {
+        let replaced = lock(&self.job).replace(job);
+        self.job_ready.notify_one();
+        drop(replaced);
+    }
+
+    fn run(&self) {
+        let mut encoder = match PlanarJpegEncoder::new(JpegBackend::Auto, PROCESSED_QUALITY) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("photonstyx: no JPEG encoder for the processed stream: {e}");
+                return;
+            }
+        };
+        // Lower than the vision thread (as Styx's preview thread is).
+        // SAFETY: setpriority on this thread (who = 0 is the calling thread on Linux).
+        unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 10) };
+        let (mut luma, mut u, mut v, mut jpeg) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        loop {
+            let job = {
+                let mut slot = lock(&self.job);
+                loop {
+                    if self.stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    if let Some(job) = slot.take() {
+                        break job;
+                    }
+                    slot = self.job_ready.wait(slot).unwrap_or_else(|e| e.into_inner());
+                }
+            };
+            let Some((width, height, scale)) = copy_stream_luma(&job.frame, job.divisor, &mut luma) else {
+                continue;
+            };
+            // The frame's buffer goes back to the camera before the drawing and encoding.
+            drop(job.frame);
+            let mut canvas = Canvas::grey(std::mem::take(&mut luma), width, height, std::mem::take(&mut u), std::mem::take(&mut v));
+            if job.draw {
+                overlay::draw(&mut canvas, &job.overlays, scale);
+            }
+            let (cw, _) = Canvas::chroma_size(width, height);
+            let input = JpegInput::I420 {
+                y: &canvas.y,
+                u: &canvas.u,
+                v: &canvas.v,
+                width,
+                height,
+                y_stride: width,
+                c_stride: cw,
+            };
+            let encoded = encoder.encode(&input, &mut jpeg);
+            (luma, u, v) = (canvas.y, canvas.u, canvas.v);
+            if let Err(e) = encoded {
+                eprintln!("photonstyx: processed stream encode failed: {e}");
+                continue;
+            }
+            let mut out = lock(&self.out);
+            out.seq += 1;
+            std::mem::swap(&mut out.jpeg, &mut jpeg);
+            drop(out);
+            self.out_ready.notify_all();
+        }
+    }
+}
+
+/// The luma of the pyramid level the stream divisor asks for (at most [`PROCESSED_MAX_WIDTH`]
+/// wide; a further halving on the CPU when no level is small enough), packed into `out`.
+/// Returns the size and the scale from full-frame pixels.
+fn copy_stream_luma(frame: &FrameLease, divisor: u32, out: &mut Vec<u8>) -> Option<(usize, usize, f64)> {
+    let full_width = frame.meta().format.resolution.width.get() as usize;
+    let mut want = divisor.max(1) as usize;
+    while full_width / want > PROCESSED_MAX_WIDTH {
+        want *= 2;
+    }
+    // The largest level no bigger than wanted (level 1 is the ISP's half).
+    let mut level = 0u8;
+    let mut source = frame;
+    while (1usize << (level + 1)) <= want {
+        match frame.pyramid_level(level + 1) {
+            Some(next) => {
+                level += 1;
+                source = next;
+            }
+            None => break,
+        }
+    }
+    let rows = source.luma_rows().ok()?;
+    let step = (want >> level).max(1);
+    let (sw, sh) = (rows.row_bytes(), rows.len());
+    let (w, h) = (sw / step, sh / step);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    out.clear();
+    out.reserve(w * h);
+    for (y, row) in rows.iter().enumerate() {
+        if y % step != 0 || y / step >= h {
+            continue;
+        }
+        let data = &row.data()[..sw];
+        if step == 1 {
+            out.extend_from_slice(&data[..w]);
+        } else {
+            out.extend(data.iter().step_by(step).take(w));
+        }
+    }
+    let scale = w as f64 / full_width as f64;
+    Some((w, h, scale))
+}
+
 struct Capture {
     frames: Option<Frames>,
     detector: Option<Detector>,
     processed_enabled: bool,
+    draw: bool,
+    divisor: u32,
     sequence: i64,
 }
 
@@ -65,9 +240,26 @@ pub struct Session {
     controls: StandardControls,
     gains: Mutex<(f32, f32)>,
     preview: Mutex<Option<Preview>>,
-    raw: Mutex<PreviewSubscriber>,
-    processed: Mutex<Latest>,
-    processed_ready: Condvar,
+    /// The raw stream's subscriber, while someone watches it (the preview encodes only then).
+    raw: Mutex<Option<PreviewSubscriber>>,
+    raw_watched_until: AtomicU64,
+    processed: Arc<Processed>,
+    processed_thread: Mutex<Option<JoinHandle<()>>>,
+}
+
+fn clock_ns(clock: libc::clockid_t) -> u64 {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: clock_gettime writes one timespec through a valid pointer.
+    unsafe { libc::clock_gettime(clock, &mut ts) };
+    ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+}
+
+pub fn monotonic_ns() -> u64 {
+    clock_ns(libc::CLOCK_MONOTONIC)
+}
+
+pub fn boottime_ns() -> u64 {
+    clock_ns(libc::CLOCK_BOOTTIME)
 }
 
 /// Names of the cameras Styx sees, as `open` takes them.
@@ -80,8 +272,8 @@ pub fn list_cameras() -> Vec<String> {
 
 impl Session {
     /// Open `camera` (a name from [`list_cameras`]; empty takes the first) at exactly `width` x
-    /// `height`, at `fps` (0: the sensor's natural rate), as grey frames with a half-size pyramid level (level 1: the ISP's
-    /// half, level 2: a CPU quarter). Detection reads level 1; refinement reads the full frame.
+    /// `height`, at `fps` (0: the sensor's natural rate), as grey frames with the ISP's half-size
+    /// pyramid level. Detection reads level 1; refinement reads the full frame.
     pub fn open(camera: &str, width: u32, height: u32, fps: u32) -> Result<Self, String> {
         let probe = styx::probe_all_with_errors_with_config(
             &StyxConfig::default().timestamp_clock(ClockSource::Boottime),
@@ -91,10 +283,9 @@ impl Session {
             .iter()
             .find(|d| camera.is_empty() || d.identity.display == camera)
             .ok_or_else(|| format!("no camera named '{camera}' (found {} devices)", probe.devices.len()))?;
-        // The size is exact. The rate is the sensor's natural one unless `fps` is non-zero: exact
-        // rates are not reliable on the kernel-driven sensor yet (30 asked, 21 delivered), so
-        // PhotonVision asks for 0.
-        let mut request = Frames::gray().size(width, height).pyramid(2);
+        // The newest frame only (Styx's default delivery): a frame the vision thread has not
+        // taken when the next one arrives is dropped, never queued.
+        let mut request = Frames::gray().size(width, height).pyramid(1).latest();
         if fps > 0 {
             request = request.fps(fps);
         }
@@ -109,34 +300,51 @@ impl Session {
             PreviewConfig::new()
                 .name(format!("photonstyx-{}", device.identity.display))
                 .size(PREVIEW_MAX_SIZE.0, PREVIEW_MAX_SIZE.1)
-                .max_fps(PREVIEW_FPS)
+                .max_fps(STREAM_FPS)
                 .quality(PREVIEW_QUALITY),
         )
         .map_err(|e| format!("cannot start the preview: {e}"))?;
-        let raw = preview.subscribe();
+        let processed = Arc::new(Processed::new());
+        let thread = {
+            let processed = processed.clone();
+            std::thread::Builder::new()
+                .name("photonstyx-processed".into())
+                .spawn(move || processed.run())
+                .map_err(|e| format!("cannot start the processed stream: {e}"))?
+        };
         Ok(Self {
             capture: Mutex::new(Capture {
                 frames: Some(frames),
                 detector: None,
                 processed_enabled: false,
+                draw: true,
+                divisor: 1,
                 sequence: 0,
             }),
             controls,
             gains: Mutex::new((1.0, 1.0)),
             preview: Mutex::new(Some(preview)),
-            raw: Mutex::new(raw),
-            processed: Mutex::new(Latest::default()),
-            processed_ready: Condvar::new(),
+            raw: Mutex::new(None),
+            raw_watched_until: AtomicU64::new(0),
+            processed,
+            processed_thread: Mutex::new(Some(thread)),
         })
     }
 
-    /// Stop the capture, then the preview (its subscribers end).
+    /// Stop the capture, then the streams (their subscribers end).
     pub fn stop(&self) {
         if let Some(frames) = lock(&self.capture).frames.take() {
             frames.stop();
         }
+        lock(&self.raw).take();
         if let Some(preview) = lock(&self.preview).take() {
             preview.stop();
+        }
+        self.processed.stop.store(true, Ordering::Release);
+        self.processed.job_ready.notify_all();
+        lock(&self.processed.job).take();
+        if let Some(thread) = lock(&self.processed_thread).take() {
+            let _ = thread.join();
         }
     }
 
@@ -146,6 +354,8 @@ impl Session {
         let mut capture = lock(&self.capture);
         capture.detector = Some(detector);
         capture.processed_enabled = config.processed_stream;
+        capture.draw = config.draw;
+        capture.divisor = config.stream_divisor.max(1);
         Ok(())
     }
 
@@ -187,7 +397,10 @@ impl Session {
             RecvOutcome::Empty => return Ok(None),
             RecvOutcome::Closed => return Err("the camera stopped".into()),
         };
-        let started = Instant::now();
+        let taken = monotonic_ns();
+        // Hops are CLOCK_MONOTONIC; the result is on CLOCK_BOOTTIME (PhotonVision's latency).
+        let boot_offset = boottime_ns() as i64 - monotonic_ns() as i64;
+        let boot = |mono: Option<u64>| mono.map_or(0, |ns| ns as i64 + boot_offset);
 
         let meta = lease.meta();
         let (width, height) = (
@@ -195,48 +408,85 @@ impl Session {
             meta.format.resolution.height.get() as i32,
         );
         let capture_nanos = meta.timestamp_in(TimestampClock::Boottime).unwrap_or(0) as i64;
+        let hops = meta.hops;
         capture.sequence += 1;
         let sequence = capture.sequence;
 
+        let detect_start = monotonic_ns();
         let detections = match capture.detector.as_mut() {
             Some(detector) => detector.process(&lease)?,
-            None => Detections {
-                targets: Vec::<TargetRecord>::new(),
-                multi: MultiRecord::default(),
-                quads: Vec::new(),
-            },
+            None => Detections::default(),
         };
-        if capture.processed_enabled {
-            self.publish_processed(&lease, &detections.quads)?;
+        let detect_end = monotonic_ns();
+
+        // The streams: hand out shares of the frame (no copies here) and let go of it. The PiSP
+        // has six output buffers and a held frame keeps one (see pv_capture's buffer rule); the
+        // stream threads release theirs as soon as they have scaled or copied it.
+        let lease = lease.into_shareable();
+        if capture.processed_enabled
+            && self.processed.due(detect_end)
+            && let Some(share) = lease.share()
+        {
+            self.processed.put(Job {
+                frame: share,
+                overlays: detections.overlays.clone(),
+                draw: capture.draw,
+                divisor: capture.divisor,
+            });
         }
-        // Hand the lease to the preview and let go of it here: the PiSP has six output buffers
-        // and a held frame keeps one of them (see pv_capture's buffer rule).
+        if detect_end > self.raw_watched_until.load(Ordering::Relaxed) {
+            // Nobody watches the raw stream: drop its subscriber (when the stream thread is not
+            // waiting on it), so the preview stops encoding.
+            if let Ok(mut raw) = self.raw.try_lock() {
+                raw.take();
+            }
+        }
         if let Some(preview) = lock(&self.preview).as_ref() {
-            preview.offer_owned(lease.into_shareable());
+            preview.offer_owned(lease);
         }
 
-        let record = FrameRecord {
+        let mut stages = [0i64; STAGES];
+        stages[0] = boot(hops.get(Hop::Sensor));
+        stages[1] = boot(hops.get(Hop::Dequeued));
+        stages[2] = boot(hops.get(Hop::IspDone));
+        stages[3] = boot(hops.get(Hop::Queued));
+        stages[4] = boot(Some(taken));
+        stages[5] = boot(Some(detect_start));
+        stages[6] = boot(Some(detect_end));
+        let mut record = FrameRecord {
             sequence,
             capture_nanos,
-            processing_nanos: started.elapsed().as_nanos() as i64,
+            processing_nanos: (detect_end - detect_start) as i64,
+            stages,
             width,
             height,
             multi: detections.multi,
             targets: detections.targets,
         };
+        record.stages[7] = boot(Some(monotonic_ns()));
         Ok(Some(pack::encode(&record)))
     }
 
     /// The next raw JPEG (grey, from the preview), waiting up to `timeout`.
     pub fn raw_jpeg(&self, timeout: Duration) -> Option<Vec<u8>> {
-        lock(&self.raw).recv(timeout).map(|frame| frame.jpeg.to_vec())
+        self.raw_watched_until
+            .store(monotonic_ns() + WATCH_TIMEOUT_NS, Ordering::Relaxed);
+        let mut raw = lock(&self.raw);
+        if raw.is_none() {
+            *raw = lock(&self.preview).as_ref().map(Preview::subscribe);
+        }
+        raw.as_mut()?.recv(timeout).map(|frame| frame.jpeg.to_vec())
     }
 
-    /// The next processed JPEG (luma with the tag outlines), waiting up to `timeout`.
+    /// The next processed JPEG (the frame with the detections drawn), waiting up to `timeout`.
     pub fn processed_jpeg(&self, timeout: Duration) -> Option<Vec<u8>> {
-        let guard = lock(&self.processed);
+        self.processed
+            .watched_until
+            .store(monotonic_ns() + WATCH_TIMEOUT_NS, Ordering::Relaxed);
+        let guard = lock(&self.processed.out);
         let (mut latest, _) = self
-            .processed_ready
+            .processed
+            .out_ready
             .wait_timeout_while(guard, timeout, |l| l.seq == l.taken)
             .unwrap_or_else(|e| e.into_inner());
         if latest.seq == latest.taken {
@@ -245,23 +495,10 @@ impl Session {
         latest.taken = latest.seq;
         Some(latest.jpeg.clone())
     }
+}
 
-    fn publish_processed(&self, lease: &FrameLease, quads: &[[f64; 8]]) -> Result<(), String> {
-        let meta = lease.meta();
-        let width = meta.format.resolution.width.get() as usize;
-        let height = meta.format.resolution.height.get() as usize;
-        let rows = lease.luma_rows().map_err(|e| format!("no luma plane: {e:?}"))?;
-        let mut luma = Vec::with_capacity(width * height);
-        for row in rows.iter() {
-            luma.extend_from_slice(&row.data()[..width]);
-        }
-        overlay::draw_quads(&mut luma, width, height, width, quads, 255);
-        let jpeg = overlay::encode_grey_jpeg(&luma, width, height, width, PROCESSED_QUALITY)?;
-        let mut latest = lock(&self.processed);
-        latest.seq += 1;
-        latest.jpeg = jpeg;
-        drop(latest);
-        self.processed_ready.notify_all();
-        Ok(())
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.stop();
     }
 }

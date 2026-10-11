@@ -180,7 +180,7 @@ public class VisionModule implements AutoCloseable {
         resultConsumers.add(statusLEDsConsumer);
         resultConsumers.add(
                 (result) ->
-                        lastPipelineResultBestTarget = result.hasTargets() ? result.targets.get(0) : null);
+                        lastPipelineResultBestTarget = result.targets.isEmpty() ? null : result.targets.get(0));
         resultConsumers.addAll(extraConsumers);
 
         // Sync VisionModule state with the first pipeline index
@@ -730,7 +730,6 @@ public class VisionModule implements AutoCloseable {
         // Pipelines like DriverMode and Calibrate3dPipeline have null output frames
         if (result.inputAndOutputFrame instanceof StyxFrame) {
             // Styx frames have no Mats: the streams are served from the camera session.
-            consumePipelineResult(result);
             result.release();
             return;
         }

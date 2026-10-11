@@ -29,6 +29,7 @@ public record StyxResult(
         long sequence,
         long captureNanos,
         long processingNanos,
+        long[] stages,
         int width,
         int height,
         boolean multiValid,
@@ -37,8 +38,25 @@ public record StyxResult(
         double multiAmbiguity,
         double[] multiPose,
         List<Target> targets) {
-    public static final int VERSION = 2;
-    static final int HEADER_BYTES = 4 + 8 + 8 + 8 + 4 + 4 + 4;
+    public static final int VERSION = 3;
+    /** Native stages in the record (photon-styx pack::STAGES). */
+    public static final int NATIVE_STAGES = 8;
+
+    public static final int STAGE_SENSOR = 0;
+    public static final int STAGE_DEQUEUED = 1;
+    public static final int STAGE_ISP_DONE = 2;
+    public static final int STAGE_QUEUED = 3;
+    public static final int STAGE_TAKEN = 4;
+    public static final int STAGE_DETECT_START = 5;
+    public static final int STAGE_DETECT_END = 6;
+    public static final int STAGE_PACKED = 7;
+    /** The JNI call returned the record to Java. */
+    public static final int STAGE_JAVA_RECEIVED = 8;
+    /** The pipeline result reached the result consumers (NetworkTables published it). */
+    public static final int STAGE_PUBLISHED = 9;
+
+    public static final int STAGES = 10;
+    static final int HEADER_BYTES = 4 + 8 + 8 + 8 + 4 + 4 + 4 + NATIVE_STAGES * 8;
     static final int MULTI_BYTES = 4 + 4 + 8 + 8 + 7 * 8;
     static final int TARGET_BYTES = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8 + 2 * 8;
 
@@ -70,6 +88,8 @@ public record StyxResult(
         int width = b.getInt();
         int height = b.getInt();
         int count = b.getInt();
+        long[] stages = new long[STAGES];
+        for (int i = 0; i < NATIVE_STAGES; i++) stages[i] = b.getLong();
         boolean multiValid = b.getInt() != 0;
         int inliers = b.getInt();
         double rms = b.getDouble();
@@ -105,6 +125,7 @@ public record StyxResult(
                 sequence,
                 capture,
                 processing,
+                stages,
                 width,
                 height,
                 multiValid,

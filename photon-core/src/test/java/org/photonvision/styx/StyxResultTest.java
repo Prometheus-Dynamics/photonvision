@@ -27,10 +27,11 @@ import org.junit.jupiter.api.Test;
 import org.photonvision.targeting.PhotonTrackedTarget;
 
 class StyxResultTest {
-    /** Bytes laid out as photon-styx/src/pack.rs writes them (version 1). */
+    /** Bytes laid out as photon-styx/src/pack.rs writes them (version 3). */
     private static byte[] sample(boolean withAlt) {
-        ByteBuffer b = ByteBuffer.allocate(40 + 80 + 232).order(ByteOrder.LITTLE_ENDIAN);
-        b.putInt(2).putLong(7).putLong(123_456).putLong(900).putInt(1280).putInt(800).putInt(1);
+        ByteBuffer b = ByteBuffer.allocate(40 + 64 + 80 + 232).order(ByteOrder.LITTLE_ENDIAN);
+        b.putInt(3).putLong(7).putLong(123_456).putLong(900).putInt(1280).putInt(800).putInt(1);
+        for (long stage = 1; stage <= 8; stage++) b.putLong(stage * 1000);
         b.putInt(1).putInt(2).putDouble(0.5).putDouble(0.25);
         for (double v : new double[] {1, 2, 3, 1, 0, 0, 0}) b.putDouble(v);
         b.putInt(11).putInt(1).putInt(1).putInt(withAlt ? 1 : 0);
@@ -47,6 +48,9 @@ class StyxResultTest {
         StyxResult r = StyxResult.decode(sample(true));
         assertEquals(7, r.sequence());
         assertEquals(123_456, r.captureNanos());
+        assertEquals(1000, r.stages()[StyxResult.STAGE_SENSOR]);
+        assertEquals(8000, r.stages()[StyxResult.STAGE_PACKED]);
+        assertEquals(0, r.stages()[StyxResult.STAGE_JAVA_RECEIVED]);
         assertEquals(1280, r.width());
         assertTrue(r.multiValid());
         assertEquals(2, r.multiInlierTags());

@@ -253,9 +253,16 @@ public class PipelineManager implements AutoCloseable {
                         new ColoredShapePipeline((ColoredShapePipelineSettings) desiredPipelineSettings);
             }
             case AprilTag -> {
-                logger.debug("Creating AprilTag pipeline");
-                currentUserPipeline =
-                        new AprilTagPipeline((AprilTagPipelineSettings) desiredPipelineSettings);
+                if (org.photonvision.styx.StyxBackend.enabled()) {
+                    // Eidos detects inside the Styx camera session; see StyxAprilTagPipeline.
+                    logger.debug("Creating AprilTag pipeline (Eidos, Styx backend)");
+                    currentUserPipeline =
+                            new StyxAprilTagPipeline((AprilTagPipelineSettings) desiredPipelineSettings);
+                } else {
+                    logger.debug("Creating AprilTag pipeline");
+                    currentUserPipeline =
+                            new AprilTagPipeline((AprilTagPipelineSettings) desiredPipelineSettings);
+                }
             }
             case Aruco -> {
                 logger.debug("Creating ArUco Pipeline");

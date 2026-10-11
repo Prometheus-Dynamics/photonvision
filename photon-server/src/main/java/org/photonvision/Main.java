@@ -282,7 +282,8 @@ public class Main {
             System.exit(1);
         }
 
-        if (Platform.isRaspberryPi()) {
+        // The Styx backend drives CSI cameras without libcamera (an image built for it has none).
+        if (Platform.isRaspberryPi() && !org.photonvision.styx.StyxBackend.enabled()) {
             tryLoadJNI(JNITypes.LIBCAMERA);
         }
 

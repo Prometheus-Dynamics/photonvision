@@ -76,9 +76,15 @@ targetingProject.afterEvaluate {
     def targetingZipClassifier = wpilibTools.getPlatformMapper().getWpilibClassifier()
     def targetingZipPath = targetingProject.layout.buildDirectory.file(
             "outputs/${targetingZipBase}-${targetingZipClassifier}.zip"
-    )
+            )
+    // Build the targeting natives zip for the selected platform only, before
+    // the native extraction reads it.
+    def targetingZipTask = "${targetingZipBase}-${targetingZipClassifier}"
     coreProject.dependencies {
-        wpilibNatives files(targetingZipPath)
+        wpilibNatives files(targetingZipPath) {
+            // By path: the native archive tasks are created after this runs.
+            builtBy "${targetingProject.path}:${targetingZipTask}"
+        }
     }
 }
 

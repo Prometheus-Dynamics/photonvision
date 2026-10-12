@@ -380,10 +380,5 @@ public class Calibrate3dPipeline
         foundCornersList.clear();
         styxViews.clear();
         styxSnapshotPending = false;
-
-        findBoardCornersPipe.release();
-        calibrate3dPipe.release();
-        calculateFPSPipe.release();
-        super.release();
     }
 }

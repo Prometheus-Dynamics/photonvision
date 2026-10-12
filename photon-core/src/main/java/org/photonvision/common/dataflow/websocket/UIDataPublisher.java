@@ -19,6 +19,7 @@ package org.photonvision.common.dataflow.websocket;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Map;
 import org.photonvision.common.dataflow.CVPipelineResultConsumer;
 import org.photonvision.common.dataflow.DataChangeService;
 import org.photonvision.common.dataflow.events.OutgoingUIEvent;
@@ -107,8 +108,16 @@ public class UIDataPublisher implements CVPipelineResultConsumer {
     }
 
     private static final String[] STAGE_NAMES = {
-        "sensor", "dequeued", "ispDone", "queued", "taken", "detectStart", "detectEnd", "packed",
-        "javaReceived", "published"
+        "sensor",
+        "dequeued",
+        "ispDone",
+        "queued",
+        "taken",
+        "detectStart",
+        "detectEnd",
+        "packed",
+        "javaReceived",
+        "published"
     };
 
     /** Each known stage of a Styx frame, in ms after the sensor's start of frame. */

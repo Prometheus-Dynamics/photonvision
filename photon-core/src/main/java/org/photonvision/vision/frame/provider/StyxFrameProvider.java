@@ -16,6 +16,7 @@
  */
 package org.photonvision.vision.frame.provider;
 
+import edu.wpi.first.networktables.NetworkTablesJNI;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.styx.StyxJNI;
@@ -27,7 +28,6 @@ import org.photonvision.vision.frame.FrameThresholdType;
 import org.photonvision.vision.frame.StyxFrame;
 import org.photonvision.vision.opencv.ImageRotationMode;
 import org.photonvision.vision.pipe.impl.HSVPipe.HSVParams;
-import edu.wpi.first.networktables.NetworkTablesJNI;
 
 /**
  * Frames from a Styx camera. Each {@link #get()} waits for the next camera frame and runs the
@@ -77,15 +77,12 @@ public class StyxFrameProvider extends FrameProvider {
         // Styx stamps the start of the frame on the boottime clock; PhotonVision's timestamps are on
         // the NetworkTables clock, so the latency is subtracted from now.
         long now = NetworkTablesJNI.now();
-        long timestamp = result.captureNanos() > 0
-                ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())
-                : now;
+        long timestamp =
+                result.captureNanos() > 0
+                        ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())
+                        : now;
         return new StyxFrame(
-                sequenceID,
-                handle,
-                result,
-                timestamp,
-                settables.getFrameStaticProperties());
+                sequenceID, handle, result, timestamp, settables.getFrameStaticProperties());
     }
 
     @Override
@@ -113,7 +110,12 @@ public class StyxFrameProvider extends FrameProvider {
     }
 
     @Override
-    protected boolean checkCameraConnected() {
+    public boolean isConnected() {
+        return checkCameraConnected();
+    }
+
+    @Override
+    public boolean checkCameraConnected() {
         try {
             for (String name : StyxJNI.listCameras()) {
                 if (name.equals(settables.getConfiguration().getDevicePath())) return true;

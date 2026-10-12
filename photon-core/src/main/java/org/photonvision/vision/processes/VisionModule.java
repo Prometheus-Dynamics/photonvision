@@ -20,13 +20,8 @@ package org.photonvision.vision.processes;
 import edu.wpi.first.cscore.CameraServerJNI;
 import edu.wpi.first.cscore.VideoException;
 import edu.wpi.first.math.util.Units;
-import java.io.IOException;
-import org.photonvision.styx.StyxJNI;
-import org.photonvision.styx.StyxMjpegServer;
-import org.photonvision.vision.camera.csi.StyxCameraSource;
-import org.photonvision.vision.camera.csi.StyxSettables;
-import org.photonvision.vision.frame.StyxFrame;
 import io.javalin.websocket.WsContext;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -48,13 +43,18 @@ import org.photonvision.common.hardware.HardwareManager;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.SerializationUtils;
+import org.photonvision.styx.StyxJNI;
+import org.photonvision.styx.StyxMjpegServer;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.CameraType;
 import org.photonvision.vision.camera.QuirkyCamera;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource;
+import org.photonvision.vision.camera.csi.StyxCameraSource;
+import org.photonvision.vision.camera.csi.StyxSettables;
 import org.photonvision.vision.frame.Frame;
+import org.photonvision.vision.frame.StyxFrame;
 import org.photonvision.vision.frame.consumer.FileSaveFrameConsumer;
 import org.photonvision.vision.frame.consumer.MJPGFrameConsumer;
 import org.photonvision.vision.pipeline.AdvancedPipelineSettings;
@@ -263,11 +263,13 @@ public class VisionModule {
                 });
         streamResultConsumers.add(
                 (frame, tgts) -> {
-                    if (frame != null && inputVideoStreamer != null) inputVideoStreamer.accept(frame.colorImage);
+                    if (frame != null && inputVideoStreamer != null)
+                        inputVideoStreamer.accept(frame.colorImage);
                 });
         streamResultConsumers.add(
                 (frame, tgts) -> {
-                    if (frame != null && outputVideoStreamer != null) outputVideoStreamer.accept(frame.processedImage);
+                    if (frame != null && outputVideoStreamer != null)
+                        outputVideoStreamer.accept(frame.processedImage);
                 });
     }
 
@@ -368,8 +370,10 @@ public class VisionModule {
 
         visionSource.release();
 
-        inputVideoStreamer.close();
-        outputVideoStreamer.close();
+        if (inputVideoStreamer != null) inputVideoStreamer.close();
+        if (outputVideoStreamer != null) outputVideoStreamer.close();
+        if (styxInputStream != null) styxInputStream.close();
+        if (styxOutputStream != null) styxOutputStream.close();
         inputFrameSaver.close();
         outputFrameSaver.close();
 
@@ -782,30 +786,5 @@ public class VisionModule {
 
     public CameraConfiguration getCameraConfiguration() {
         return this.visionSource.cameraConfiguration;
-    }
-
-    @Override
-    public void close() {
-        if (visionRunner.isRunning()) {
-            stop();
-        }
-
-        // Ensure config is saved and synced before closing
-        saveAndBroadcastAll();
-
-        if (inputVideoStreamer != null) inputVideoStreamer.close();
-        if (outputVideoStreamer != null) outputVideoStreamer.close();
-        if (styxInputStream != null) styxInputStream.close();
-        if (styxOutputStream != null) styxOutputStream.close();
-        inputFrameSaver.close();
-        outputFrameSaver.close();
-
-        changeSubscriberHandle.stop();
-        setVisionLEDs(false);
-
-        visionRunner.close();
-        pipelineManager.close();
-        visionSource.close();
-        if (lastPipelineResultBestTarget != null) lastPipelineResultBestTarget.close();
     }
 }

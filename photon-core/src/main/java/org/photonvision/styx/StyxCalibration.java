@@ -170,8 +170,7 @@ public final class StyxCalibration {
             }
             boolean[] used = new boolean[view.ids().length];
             Arrays.fill(used, true);
-            observations.add(
-                    new BoardObservation(List.of(), image, List.of(), null, view.ids(), used, null, null));
+            observations.add(new BoardObservation(List.of(), image, List.of(), null, used, null, null));
         }
         return new CameraCalibrationCoefficients(
                 resolution,
@@ -181,8 +180,7 @@ public final class StyxCalibration {
                 observations,
                 new Size(squaresX, squaresY),
                 squareMeters,
-                lens == null ? CameraLensModel.LENSMODEL_OPENCV : lens,
-                null);
+                lens == null ? CameraLensModel.LENSMODEL_OPENCV : lens);
     }
 
     private static void requireFinite(String name, double value) {

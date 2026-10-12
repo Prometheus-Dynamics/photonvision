@@ -16,9 +16,10 @@
  */
 package org.photonvision.vision.camera.csi;
 
+import edu.wpi.first.cscore.VideoMode;
+import edu.wpi.first.util.PixelFormat;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
 import org.photonvision.common.configuration.CameraConfiguration;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
@@ -26,28 +27,33 @@ import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.styx.StyxJNI;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource.FPSRatedVideoMode;
 import org.photonvision.vision.processes.VisionSourceSettables;
-import edu.wpi.first.util.PixelFormat;
-import edu.wpi.first.cscore.VideoMode;
 
 /**
- * Settings of a CSI camera on the Styx backend. A video mode is a Styx capture at an exact size
- * and rate, so changing it reopens the camera session. Controls map to Styx's standard controls.
+ * Settings of a CSI camera on the Styx backend. A video mode is a Styx capture at an exact size and
+ * rate, so changing it reopens the camera session. Controls map to Styx's standard controls.
  */
 public class StyxSettables extends VisionSourceSettables {
     private static final Logger logger = new Logger(StyxSettables.class, LogGroup.Camera);
 
     /**
-     * The Raze OV9782 modes (grey, the sensor's 3A-processed luma), opened at exactly this rate:
-     * the sensor's three native modes (Styx's ov9782.toml: the full array, its top 720 lines, and
-     * the array subsampled 2x2), up to about 145, 173 and 311 fps.
-     * The Raze image drives the sensor through Styx's sensor bridge, which sets the sensor's
-     * timing itself; exact rates and 640x400 were only unreliable on the kernel-driven sensor
-     * (ov9282 driver), which the image no longer binds.
+     * The Raze OV9782 modes (grey, the sensor's 3A-processed luma), opened at exactly this rate: the
+     * sensor's three native modes (Styx's ov9782.toml: the full array, its top 720 lines, and the
+     * array subsampled 2x2), up to about 145, 173 and 311 fps. The Raze image drives the sensor
+     * through Styx's sensor bridge, which sets the sensor's timing itself; exact rates and 640x400
+     * were only unreliable on the kernel-driven sensor (ov9282 driver), which the image no longer
+     * binds.
      */
     private static final int[][] MODES = {
-        {1280, 800, 30}, {1280, 800, 60}, {1280, 800, 120},
-        {1280, 720, 30}, {1280, 720, 60}, {1280, 720, 120},
-        {640, 400, 30}, {640, 400, 60}, {640, 400, 120}, {640, 400, 240},
+        {1280, 800, 30},
+        {1280, 800, 60},
+        {1280, 800, 120},
+        {1280, 720, 30},
+        {1280, 720, 60},
+        {1280, 720, 120},
+        {640, 400, 30},
+        {640, 400, 60},
+        {640, 400, 120},
+        {640, 400, 240},
     };
 
     private FPSRatedVideoMode currentVideoMode;
@@ -69,9 +75,10 @@ public class StyxSettables extends VisionSourceSettables {
         } catch (IOException | UnsatisfiedLinkError e) {
             logger.error("Unable to load libphotonstyx", e);
         }
-        videoModes = new ArrayList<>();
-        for (int[] m : MODES) {
-            videoModes.add(new FPSRatedVideoMode(PixelFormat.GRAY, m[0], m[1], m[2], m[2], 1));
+        videoModes = new HashMap<>();
+        for (int i = 0; i < MODES.length; i++) {
+            int[] m = MODES[i];
+            videoModes.put(i, new FPSRatedVideoMode(PixelFormat.kGray, m[0], m[1], m[2], m[2], 1));
         }
         currentVideoMode = (FPSRatedVideoMode) videoModes.get(0);
         this.cameraPropertiesCached = true;
@@ -107,10 +114,7 @@ public class StyxSettables extends VisionSourceSettables {
             try {
                 handle =
                         StyxJNI.open(
-                                getConfiguration().matchedCameraInfo.path(),
-                                mode.width,
-                                mode.height,
-                                mode.fps);
+                                getConfiguration().matchedCameraInfo.path(), mode.width, mode.height, mode.fps);
                 logger.info(
                         "Opened Styx camera "
                                 + getConfiguration().nickname
@@ -137,7 +141,7 @@ public class StyxSettables extends VisionSourceSettables {
     }
 
     @Override
-    public List<VideoMode> getAllVideoModes() {
+    public HashMap<Integer, VideoMode> getAllVideoModes() {
         return videoModes;
     }
 
@@ -145,7 +149,7 @@ public class StyxSettables extends VisionSourceSettables {
     public void setExposureRaw(double exposureRaw) {
         lastExposureUs = exposureRaw;
         setControl(StyxJNI.CONTROL_AE, 0);
-        double us = Math.clamp(exposureRaw, getMinExposureRaw(), getMaxExposureRaw());
+        double us = Math.max(getMinExposureRaw(), Math.min(getMaxExposureRaw(), exposureRaw));
         setControl(StyxJNI.CONTROL_EXPOSURE_US, us);
     }
 
@@ -199,7 +203,9 @@ public class StyxSettables extends VisionSourceSettables {
     public void setGain(int gain) {
         lastGain = gain;
         // The UI's 0-100 maps to a total gain of 1 to 10, as on the libcamera path.
-        setControl(StyxJNI.CONTROL_GAIN, Math.clamp(MathUtils.map(gain, 0.0, 100.0, 1.0, 10.0), 1.0, 10.0));
+        setControl(
+                StyxJNI.CONTROL_GAIN,
+                Math.max(1.0, Math.min(10.0, MathUtils.map(gain, 0.0, 100.0, 1.0, 10.0))));
     }
 
     @Override

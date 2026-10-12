@@ -16,14 +16,14 @@
  */
 package org.photonvision.vision.pipeline;
 
-import java.util.Locale;
-import org.photonvision.common.configuration.ConfigProvider;
-import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
-import org.photonvision.vision.calibration.CameraLensModel;
-import org.photonvision.vision.frame.FrameStaticProperties;
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.math.geometry.Pose3d;
+import java.util.Locale;
+import org.photonvision.common.configuration.ConfigManager;
+import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.CameraLensModel;
+import org.photonvision.vision.frame.FrameStaticProperties;
 
 /** Builds the JSON that {@code StyxJNI.configure} takes (photon-styx/src/config.rs). */
 final class EidosDetectorConfig {
@@ -40,8 +40,10 @@ final class EidosDetectorConfig {
         StringBuilder sb = new StringBuilder(512);
         sb.append('{');
         sb.append("\"family\":\"")
-                .append(settings.tagFamily == org.photonvision.vision.apriltag.AprilTagFamily.kTag16h5
-                        ? "tag16h5" : "tag36h11")
+                .append(
+                        settings.tagFamily == org.photonvision.vision.apriltag.AprilTagFamily.kTag16h5
+                                ? "tag16h5"
+                                : "tag36h11")
                 .append('"');
         sb.append(",\"tagSizeM\":").append(num(tagSizeMeters(settings)));
         sb.append(",\"multiTag\":").append(settings.doMultiTarget && settings.solvePNPEnabled);
@@ -76,22 +78,29 @@ final class EidosDetectorConfig {
         if (settings.doMultiTarget && settings.solvePNPEnabled) {
             sb.append(",\"fieldTags\":[");
             boolean first = true;
-            AprilTagFieldLayout field =
-                    ConfigProvider.getInstance().getConfig().getApriltagFieldLayout();
+            AprilTagFieldLayout field = ConfigManager.getInstance().getConfig().getApriltagFieldLayout();
             if (field != null && field.getTags() != null) {
                 for (AprilTag tag : field.getTags()) {
                     Pose3d pose = tag.pose;
                     if (pose == null) continue;
                     if (!first) sb.append(',');
                     first = false;
-                    sb.append("{\"id\":").append(tag.ID)
-                            .append(",\"x\":").append(num(pose.getX()))
-                            .append(",\"y\":").append(num(pose.getY()))
-                            .append(",\"z\":").append(num(pose.getZ()))
-                            .append(",\"qw\":").append(num(pose.getRotation().getQuaternion().getW()))
-                            .append(",\"qx\":").append(num(pose.getRotation().getQuaternion().getX()))
-                            .append(",\"qy\":").append(num(pose.getRotation().getQuaternion().getY()))
-                            .append(",\"qz\":").append(num(pose.getRotation().getQuaternion().getZ()))
+                    sb.append("{\"id\":")
+                            .append(tag.ID)
+                            .append(",\"x\":")
+                            .append(num(pose.getX()))
+                            .append(",\"y\":")
+                            .append(num(pose.getY()))
+                            .append(",\"z\":")
+                            .append(num(pose.getZ()))
+                            .append(",\"qw\":")
+                            .append(num(pose.getRotation().getQuaternion().getW()))
+                            .append(",\"qx\":")
+                            .append(num(pose.getRotation().getQuaternion().getX()))
+                            .append(",\"qy\":")
+                            .append(num(pose.getRotation().getQuaternion().getY()))
+                            .append(",\"qz\":")
+                            .append(num(pose.getRotation().getQuaternion().getZ()))
                             .append('}');
                 }
             }

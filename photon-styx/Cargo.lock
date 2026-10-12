@@ -213,6 +213,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-test-fixtures"
+version = "1.0.0"
+dependencies = [
+ "eidos-core",
+ "eidos-frame",
+ "eidos-geometry",
+ "smallvec",
+ "styx-core-rs",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -484,6 +495,7 @@ dependencies = [
  "eidos-calibration",
  "eidos-core",
  "eidos-detectors",
+ "eidos-test-fixtures",
  "jni",
  "libc",
  "serde",
@@ -1126,8 +1138,4 @@ version = "1.0.0"
 
 [[patch.unused]]
 name = "eidos-nostd-smoke"
-version = "1.0.0"
-
-[[patch.unused]]
-name = "eidos-test-fixtures"
 version = "1.0.0"

@@ -12,14 +12,21 @@
 //!   `f64[8] corners` (refined, image pixels, marker order), `f64[7] bestPose`,
 //!   `f64[7] altPose` (both optical camera-from-tag: x, y, z, qw, qx, qy, qz),
 //!   `f64 ambiguity`, `f64 rmsBestPx`, `f64 rmsAltPx`,
-//!   `f64[2] center` (the tag centre undistorted into the pinhole intrinsics; NaN if unknown).
+//!   `f64[2] center` (the tag centre undistorted into the pinhole intrinsics; NaN if unknown);
+//! - board: `i32 requested`, `i32 found`, `i32 cornerCount`, then `cornerCount` records of
+//!   `i32 id`, `f64 u`, `f64 v` (a board detection asked for on this frame, see `session.rs`;
+//!   `requested` is 0 and the count 0 when no detection was asked for, and `found` is 0 with no
+//!   corners when the board was not seen).
 
-pub const VERSION: i32 = 3;
+pub const VERSION: i32 = 4;
 pub const STAGES: usize = 8;
 pub const MAX_TARGETS: usize = 64;
+pub const MAX_BOARD_CORNERS: usize = 1024;
 pub const HEADER_BYTES: usize = 4 + 8 + 8 + 8 + 4 + 4 + 4 + STAGES * 8;
 pub const MULTI_BYTES: usize = 4 + 4 + 8 + 8 + 7 * 8;
 pub const TARGET_BYTES: usize = 4 * 4 + 8 * 8 + 7 * 8 + 7 * 8 + 3 * 8 + 2 * 8;
+pub const BOARD_HEADER_BYTES: usize = 4 + 4 + 4;
+pub const BOARD_CORNER_BYTES: usize = 4 + 8 + 8;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct MultiRecord {
@@ -45,6 +52,14 @@ pub struct TargetRecord {
     pub center: [f64; 2],
 }
 
+/// A board detection: corner ids (chessboard corner ids) and their pixels, in the same order.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BoardRecord {
+    pub found: bool,
+    pub ids: Vec<i32>,
+    pub corners: Vec<[f64; 2]>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameRecord {
     pub sequence: i64,
@@ -56,6 +71,8 @@ pub struct FrameRecord {
     pub height: i32,
     pub multi: MultiRecord,
     pub targets: Vec<TargetRecord>,
+    /// `Some` when a board detection was asked for on this frame.
+    pub board: Option<BoardRecord>,
 }
 
 struct Writer(Vec<u8>);
@@ -108,6 +125,23 @@ pub fn encode(record: &FrameRecord) -> Vec<u8> {
         w.f64(t.rms_best_px);
         w.f64(t.rms_alt_px);
         w.f64s(&t.center);
+    }
+    match &record.board {
+        None => {
+            w.i32(0);
+            w.i32(0);
+            w.i32(0);
+        }
+        Some(board) => {
+            let count = board.ids.len().min(MAX_BOARD_CORNERS);
+            w.i32(1);
+            w.i32(board.found as i32);
+            w.i32(count as i32);
+            for (id, corner) in board.ids.iter().zip(&board.corners).take(count) {
+                w.i32(*id);
+                w.f64s(corner);
+            }
+        }
     }
     w.0
 }
@@ -165,9 +199,13 @@ mod tests {
                     center: [f64::NAN; 2],
                 },
             ],
+            board: None,
         };
         let bytes = encode(&record);
-        assert_eq!(bytes.len(), HEADER_BYTES + MULTI_BYTES + 2 * TARGET_BYTES);
+        assert_eq!(
+            bytes.len(),
+            HEADER_BYTES + MULTI_BYTES + 2 * TARGET_BYTES + BOARD_HEADER_BYTES
+        );
         assert_eq!(i32_at(&bytes, 0), VERSION);
         assert_eq!(i32_at(&bytes, 36), 2); // target count
         assert_eq!(i64::from_le_bytes(bytes[40..48].try_into().unwrap()), 1); // first stage
@@ -197,6 +235,7 @@ mod tests {
             height: 0,
             multi: MultiRecord::default(),
             targets: vec![],
+            board: None,
         };
         let one = TargetRecord {
             id: 0,
@@ -212,6 +251,48 @@ mod tests {
         };
         record.targets = vec![one; MAX_TARGETS + 5];
         let bytes = encode(&record);
-        assert_eq!(bytes.len(), HEADER_BYTES + MULTI_BYTES + MAX_TARGETS * TARGET_BYTES);
+        assert_eq!(
+            bytes.len(),
+            HEADER_BYTES + MULTI_BYTES + MAX_TARGETS * TARGET_BYTES + BOARD_HEADER_BYTES
+        );
+    }
+
+    #[test]
+    fn packs_the_board_section_after_the_targets() {
+        let mut record = FrameRecord {
+            sequence: 1,
+            capture_nanos: 0,
+            processing_nanos: 0,
+            stages: [0; STAGES],
+            width: 640,
+            height: 480,
+            multi: MultiRecord::default(),
+            targets: vec![],
+            board: None,
+        };
+        let none = encode(&record);
+        assert_eq!(none.len(), HEADER_BYTES + MULTI_BYTES + BOARD_HEADER_BYTES);
+        let at = HEADER_BYTES + MULTI_BYTES;
+        assert_eq!(i32_at(&none, at), 0); // not requested
+
+        record.board = Some(BoardRecord {
+            found: true,
+            ids: vec![3, 7],
+            corners: vec![[10.5, 20.25], [30.0, 40.0]],
+        });
+        let bytes = encode(&record);
+        assert_eq!(bytes.len(), HEADER_BYTES + MULTI_BYTES + BOARD_HEADER_BYTES + 2 * BOARD_CORNER_BYTES);
+        assert_eq!(i32_at(&bytes, at), 1);
+        assert_eq!(i32_at(&bytes, at + 4), 1);
+        assert_eq!(i32_at(&bytes, at + 8), 2);
+        let first = at + BOARD_HEADER_BYTES;
+        assert_eq!(i32_at(&bytes, first), 3);
+        assert_eq!(f64_at(&bytes, first + 4), 10.5);
+        assert_eq!(f64_at(&bytes, first + 12), 20.25);
+
+        record.board = Some(BoardRecord::default());
+        let missing = encode(&record);
+        assert_eq!(i32_at(&missing, at + 4), 0); // requested, not found
+        assert_eq!(i32_at(&missing, at + 8), 0);
     }
 }

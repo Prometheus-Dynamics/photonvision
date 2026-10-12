@@ -103,7 +103,9 @@ public class NetworkUtils {
 
                 do {
                     shell.executeBashCommand(
-                            "nmcli -t -f GENERAL.CONNECTION,GENERAL.DEVICE,GENERAL.TYPE device show", true, true);
+                            "nmcli -t -f GENERAL.CONNECTION,GENERAL.DEVICE,GENERAL.TYPE,GENERAL.STATE device show",
+                            true,
+                            true);
                     // nmcli returns an error of 8 if NetworkManager isn't running
                     networkManagerRunning = shell.getExitCode() != 8;
                     tryagain = System.currentTimeMillis() - start < timeout;
@@ -129,11 +131,13 @@ public class NetworkUtils {
             }
             if (out != null) {
                 Pattern pattern =
-                        Pattern.compile("GENERAL.CONNECTION:(.*)\nGENERAL.DEVICE:(.*)\nGENERAL.TYPE:(.*)");
+                        Pattern.compile(
+                                "GENERAL.CONNECTION:(.*)\nGENERAL.DEVICE:(.*)\nGENERAL.TYPE:(.*)\nGENERAL.STATE:(.*)");
                 Matcher matcher = pattern.matcher(out);
                 while (matcher.find()) {
-                    if (!matcher.group(2).equals("lo")) {
-                        // only include non-loopback devices
+                    if (!matcher.group(2).equals("lo") && !matcher.group(4).contains("unmanaged")) {
+                        // only include non-loopback devices that NetworkManager manages (e.g. not a
+                        // USB gadget interface like usb0 that is deliberately left unmanaged)
                         ret.add(new NMDeviceInfo(matcher.group(1), matcher.group(2), matcher.group(3)));
                     }
                 }

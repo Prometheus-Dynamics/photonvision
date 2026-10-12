@@ -18,6 +18,8 @@ package org.photonvision.styx;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,10 +29,15 @@ import org.junit.jupiter.api.Test;
 import org.photonvision.targeting.PhotonTrackedTarget;
 
 class StyxResultTest {
-    /** Bytes laid out as photon-styx/src/pack.rs writes them (version 3). */
+    /** Bytes laid out as photon-styx/src/pack.rs writes them (version 4). */
     private static byte[] sample(boolean withAlt) {
-        ByteBuffer b = ByteBuffer.allocate(40 + 64 + 80 + 232).order(ByteOrder.LITTLE_ENDIAN);
-        b.putInt(3).putLong(7).putLong(123_456).putLong(900).putInt(1280).putInt(800).putInt(1);
+        return sample(withAlt, 0, 0);
+    }
+
+    /** As {@link #sample(boolean)}, with a board section: requested, found, and one corner. */
+    private static byte[] sample(boolean withAlt, int requested, int found) {
+        ByteBuffer b = ByteBuffer.allocate(40 + 64 + 80 + 232 + 12 + 20).order(ByteOrder.LITTLE_ENDIAN);
+        b.putInt(4).putLong(7).putLong(123_456).putLong(900).putInt(1280).putInt(800).putInt(1);
         for (long stage = 1; stage <= 8; stage++) b.putLong(stage * 1000);
         b.putInt(1).putInt(2).putDouble(0.5).putDouble(0.25);
         for (double v : new double[] {1, 2, 3, 1, 0, 0, 0}) b.putDouble(v);
@@ -40,6 +47,10 @@ class StyxResultTest {
         for (double v : new double[] {0.4, 0.5, 0.6, 1, 0, 0, 0}) b.putDouble(v);
         b.putDouble(0.3).putDouble(0.4).putDouble(0.6);
         b.putDouble(420).putDouble(300);
+        b.putInt(requested).putInt(found).putInt(found);
+        if (found != 0) {
+            b.putInt(5).putDouble(31.5).putDouble(42.25);
+        }
         return b.array();
     }
 
@@ -65,6 +76,29 @@ class StyxResultTest {
     }
 
     @Test
+    void decodesTheBoardSectionWhenRequested() {
+        StyxResult r = StyxResult.decode(sample(true, 1, 1));
+        assertEquals(1, r.targets().size());
+        assertTrue(r.board().found());
+        assertArrayEquals(new int[] {5}, r.board().ids());
+        assertArrayEquals(new double[] {31.5, 42.25}, r.board().corners());
+    }
+
+    @Test
+    void boardIsNullWhenNotRequested() {
+        assertNull(StyxResult.decode(sample(true, 0, 0)).board());
+    }
+
+    @Test
+    void requestedButUnseenBoardHasNoCorners() {
+        StyxResult.Board missing = StyxResult.decode(sample(true, 1, 0)).board();
+        assertNotNull(missing);
+        assertFalse(missing.found());
+        assertEquals(0, missing.ids().length);
+        assertEquals(0, missing.corners().length);
+    }
+
+    @Test
     void altPoseIsNullWhenAbsent() {
         assertNull(StyxResult.decode(sample(false)).targets().get(0).alt());
     }
@@ -73,7 +107,8 @@ class StyxResultTest {
     void rejectsOtherVersions() {
         byte[] bytes = sample(true);
         bytes[0] = 9;
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> StyxResult.decode(bytes));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class, () -> StyxResult.decode(bytes));
     }
 
     @Test
@@ -82,7 +117,16 @@ class StyxResultTest {
         double[] corners = {370, 250, 470, 250, 470, 350, 370, 350};
         StyxResult.Target t =
                 new StyxResult.Target(
-                        3, 0, false, corners, new double[] {Double.NaN}, null, 0, 0, 0, new double[] {420, 300});
+                        3,
+                        0,
+                        false,
+                        corners,
+                        new double[] {Double.NaN},
+                        null,
+                        0,
+                        0,
+                        0,
+                        new double[] {420, 300});
         PhotonTrackedTarget p =
                 StyxTargetMath.toPhotonTarget(
                         t, new StyxTargetMath.Intrinsics(500, 500, 320, 200, 640.0 * 400.0));
@@ -100,7 +144,16 @@ class StyxResultTest {
     void absentPoseGivesIdentity() {
         StyxResult.Target t =
                 new StyxResult.Target(
-                        1, 0, false, new double[8], new double[] {Double.NaN, 0, 0, 0, 0, 0, 0}, null, 0, 0, 0, new double[] {Double.NaN, Double.NaN});
+                        1,
+                        0,
+                        false,
+                        new double[8],
+                        new double[] {Double.NaN, 0, 0, 0, 0, 0, 0},
+                        null,
+                        0,
+                        0,
+                        0,
+                        new double[] {Double.NaN, Double.NaN});
         PhotonTrackedTarget p =
                 StyxTargetMath.toPhotonTarget(t, new StyxTargetMath.Intrinsics(1, 1, 0, 0, 1));
         assertEquals(0.0, p.getBestCameraToTarget().getX());

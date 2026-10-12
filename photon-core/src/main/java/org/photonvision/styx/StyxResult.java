@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One frame's detections, decoded from the little-endian layout in photon-styx/src/pack.rs
- * (version 1). Poses are {@code [x, y, z, qw, qx, qy, qz]}; a pose with NaN is absent.
+ * One frame's detections, decoded from the little-endian layout in photon-styx/src/pack.rs (version
+ * 4). Poses are {@code [x, y, z, qw, qx, qy, qz]}; a pose with NaN is absent.
  */
 public record StyxResult(
         long sequence,
@@ -37,8 +37,10 @@ public record StyxResult(
         double multiRmsPx,
         double multiAmbiguity,
         double[] multiPose,
-        List<Target> targets) {
-    public static final int VERSION = 3;
+        List<Target> targets,
+        Board board) {
+    public static final int VERSION = 4;
+
     /** Native stages in the record (photon-styx pack::STAGES). */
     public static final int NATIVE_STAGES = 8;
 
@@ -50,8 +52,10 @@ public record StyxResult(
     public static final int STAGE_DETECT_START = 5;
     public static final int STAGE_DETECT_END = 6;
     public static final int STAGE_PACKED = 7;
+
     /** The JNI call returned the record to Java. */
     public static final int STAGE_JAVA_RECEIVED = 8;
+
     /** The pipeline result reached the result consumers (NetworkTables published it). */
     public static final int STAGE_PUBLISHED = 9;
 
@@ -76,11 +80,18 @@ public record StyxResult(
             double rmsAltPx,
             double[] center) {}
 
+    /**
+     * A board detection asked for on this frame. {@code corners} is flat (u, v per corner) and {@code
+     * ids} the corner ids in the same order; both are empty when the board was not seen.
+     */
+    public record Board(boolean found, int[] ids, double[] corners) {}
+
     public static StyxResult decode(byte[] bytes) {
         ByteBuffer b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         int version = b.getInt();
         if (version != VERSION) {
-            throw new IllegalStateException("photonstyx result version " + version + ", expected " + VERSION);
+            throw new IllegalStateException(
+                    "photonstyx result version " + version + ", expected " + VERSION);
         }
         long sequence = b.getLong();
         long capture = b.getLong();
@@ -121,6 +132,22 @@ public record StyxResult(
                             rmsAlt,
                             center));
         }
+        Board board = null;
+        if (b.getInt() != 0) {
+            boolean found = b.getInt() != 0;
+            int corners = b.getInt();
+            int[] ids = new int[corners];
+            double[] uv = new double[2 * corners];
+            for (int i = 0; i < corners; i++) {
+                ids[i] = b.getInt();
+                uv[2 * i] = b.getDouble();
+                uv[2 * i + 1] = b.getDouble();
+            }
+            board = new Board(found, ids, uv);
+        } else {
+            b.getInt();
+            b.getInt();
+        }
         return new StyxResult(
                 sequence,
                 capture,
@@ -133,7 +160,8 @@ public record StyxResult(
                 rms,
                 ambiguity,
                 multiPose,
-                List.copyOf(targets));
+                List.copyOf(targets),
+                board);
     }
 
     private static double[] doubles(ByteBuffer b, int n) {

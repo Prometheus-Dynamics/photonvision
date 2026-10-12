@@ -26,9 +26,9 @@ import org.photonvision.common.logging.Logger;
 import org.photonvision.jni.CombinedRuntimeLoader;
 
 /**
- * JNI into libphotonstyx.so (photon-styx/ in the PhotonVision fork): Styx capture and Eidos AprilTag
- * detection for the experimental Styx backend. Handles are opaque positive longs. Only the Styx
- * backend loads this library (see {@link StyxBackend}).
+ * JNI into libphotonstyx.so (photon-styx/ in the PhotonVision fork): Styx capture and Eidos
+ * AprilTag detection for the experimental Styx backend. Handles are opaque positive longs. Only the
+ * Styx backend loads this library (see {@link StyxBackend}).
  */
 public final class StyxJNI {
     private static final Logger logger = new Logger(StyxJNI.class, LogGroup.Camera);
@@ -105,8 +105,8 @@ public final class StyxJNI {
     public static native double setControl(long handle, int kind, double value);
 
     /**
-     * Wait up to timeoutMs for a frame and detect on it. Returns the packed result (see
-     * {@link StyxResult}), or an empty array on timeout.
+     * Wait up to timeoutMs for a frame and detect on it. Returns the packed result (see {@link
+     * StyxResult}), or an empty array on timeout.
      */
     public static native byte[] processFrame(long handle, long timeoutMs);
 
@@ -118,4 +118,18 @@ public final class StyxJNI {
 
     /** CLOCK_BOOTTIME now: the clock frame capture times are on. */
     public static native long nowBoottimeNanos();
+
+    /**
+     * Ask for a board detection (a {@link StyxCalibration} board JSON) on the next camera frame; the
+     * result rides in that frame's {@link StyxResult#board()}.
+     */
+    public static native void requestBoard(long handle, String boardJson);
+
+    /**
+     * Solve the camera from board views: {@code viewSizes[v]} corners of view {@code v}, taken in
+     * order from {@code ids} and {@code corners} (u, v pairs). Returns {@code [fx, fy, cx, cy, skew,
+     * rms, distortionCount, converged, distortion..., viewRms...]}; see photon-styx/src/lib.rs.
+     */
+    public static native double[] calibrate(
+            String boardJson, String lensModel, int[] viewSizes, int[] ids, double[] corners);
 }

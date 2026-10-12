@@ -26,8 +26,8 @@ import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.styx.StyxJNI;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource.FPSRatedVideoMode;
 import org.photonvision.vision.processes.VisionSourceSettables;
-import org.wpilib.util.PixelFormat;
-import org.wpilib.vision.camera.VideoMode;
+import edu.wpi.first.util.PixelFormat;
+import edu.wpi.first.cscore.VideoMode;
 
 /**
  * Settings of a CSI camera on the Styx backend. A video mode is a Styx capture at an exact size

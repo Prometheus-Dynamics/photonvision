@@ -27,7 +27,7 @@ import org.photonvision.vision.frame.FrameThresholdType;
 import org.photonvision.vision.frame.StyxFrame;
 import org.photonvision.vision.opencv.ImageRotationMode;
 import org.photonvision.vision.pipe.impl.HSVPipe.HSVParams;
-import org.wpilib.networktables.NetworkTablesJNI;
+import edu.wpi.first.networktables.NetworkTablesJNI;
 
 /**
  * Frames from a Styx camera. Each {@link #get()} waits for the next camera frame and runs the

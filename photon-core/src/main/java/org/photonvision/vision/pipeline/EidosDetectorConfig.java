@@ -21,9 +21,9 @@ import org.photonvision.common.configuration.ConfigProvider;
 import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.calibration.CameraLensModel;
 import org.photonvision.vision.frame.FrameStaticProperties;
-import org.wpilib.fields.Field;
-import org.wpilib.fields.FieldTag;
-import org.wpilib.math.geometry.Pose3d;
+import edu.wpi.first.apriltag.AprilTag;
+import edu.wpi.first.apriltag.AprilTagFieldLayout;
+import edu.wpi.first.math.geometry.Pose3d;
 
 /** Builds the JSON that {@code StyxJNI.configure} takes (photon-styx/src/config.rs). */
 final class EidosDetectorConfig {
@@ -76,14 +76,15 @@ final class EidosDetectorConfig {
         if (settings.doMultiTarget && settings.solvePNPEnabled) {
             sb.append(",\"fieldTags\":[");
             boolean first = true;
-            Field field = ConfigProvider.getInstance().getConfig().getFieldLayout();
+            AprilTagFieldLayout field =
+                    ConfigProvider.getInstance().getConfig().getApriltagFieldLayout();
             if (field != null && field.getTags() != null) {
-                for (FieldTag tag : field.getTags()) {
-                    Pose3d pose = tag.getPose();
+                for (AprilTag tag : field.getTags()) {
+                    Pose3d pose = tag.pose;
                     if (pose == null) continue;
                     if (!first) sb.append(',');
                     first = false;
-                    sb.append("{\"id\":").append(tag.getID())
+                    sb.append("{\"id\":").append(tag.ID)
                             .append(",\"x\":").append(num(pose.getX()))
                             .append(",\"y\":").append(num(pose.getY()))
                             .append(",\"z\":").append(num(pose.getZ()))

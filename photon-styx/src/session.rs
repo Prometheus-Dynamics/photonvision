@@ -18,10 +18,11 @@ use styx::core::prelude::Hop;
 use styx::prelude::*;
 use styx::preview::{Preview, PreviewConfig, PreviewSubscriber};
 
+use crate::calibrate::{self, Board};
 use crate::config::PipelineConfig;
 use crate::detect::{Detections, Detector, Overlay};
 use crate::overlay::{self, Canvas};
-use crate::pack::{self, FrameRecord, STAGES};
+use crate::pack::{self, BoardRecord, FrameRecord, STAGES};
 
 /// The raw preview: at most 640x400, 30 fps, JPEG quality 70 (encoded off the vision thread).
 const PREVIEW_MAX_SIZE: (u32, u32) = (640, 400);
@@ -181,6 +182,23 @@ impl Processed {
     }
 }
 
+/// A board detection for the record: found or not. A failed detection is logged and reported as
+/// not found, so one bad frame never stops the stream.
+fn detect_board(board: &Board, frame: &FrameLease) -> BoardRecord {
+    match calibrate::detect(board, frame) {
+        Ok(Some(found)) => BoardRecord {
+            found: true,
+            ids: found.ids.iter().map(|&id| id as i32).collect(),
+            corners: found.corners.iter().map(|c| [c.u, c.v]).collect(),
+        },
+        Ok(None) => BoardRecord::default(),
+        Err(e) => {
+            eprintln!("photonstyx: board detection failed: {e}");
+            BoardRecord::default()
+        }
+    }
+}
+
 /// The luma of the pyramid level the stream divisor asks for (at most [`PROCESSED_MAX_WIDTH`]
 /// wide; a further halving on the CPU when no level is small enough), packed into `out`.
 /// Returns the size and the scale from full-frame pixels.
@@ -233,6 +251,8 @@ struct Capture {
     draw: bool,
     divisor: u32,
     sequence: i64,
+    /// A board detection asked for on the next frame (taken by `process`).
+    board_request: Option<Board>,
 }
 
 pub struct Session {
@@ -320,6 +340,7 @@ impl Session {
                 draw: true,
                 divisor: 1,
                 sequence: 0,
+                board_request: None,
             }),
             controls,
             gains: Mutex::new((1.0, 1.0)),
@@ -357,6 +378,12 @@ impl Session {
         capture.draw = config.draw;
         capture.divisor = config.stream_divisor.max(1);
         Ok(())
+    }
+
+    /// Detect `board` on the next frame (calibration snapshots). The result rides in that frame's
+    /// record (see `pack.rs`); a later request replaces an unanswered one.
+    pub fn request_board(&self, board: Board) {
+        lock(&self.capture).board_request = Some(board);
     }
 
     /// Apply a standard control (`CONTROL_*`); returns the value in effect.
@@ -417,6 +444,7 @@ impl Session {
             Some(detector) => detector.process(&lease)?,
             None => Detections::default(),
         };
+        let board = capture.board_request.take().map(|board| detect_board(&board, &lease));
         let detect_end = monotonic_ns();
 
         // The streams: hand out shares of the frame (no copies here) and let go of it. The PiSP
@@ -462,6 +490,7 @@ impl Session {
             height,
             multi: detections.multi,
             targets: detections.targets,
+            board,
         };
         record.stages[7] = boot(Some(monotonic_ns()));
         Ok(Some(pack::encode(&record)))

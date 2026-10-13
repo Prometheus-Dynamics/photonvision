@@ -434,7 +434,12 @@ impl Session {
             meta.format.resolution.width.get() as i32,
             meta.format.resolution.height.get() as i32,
         );
-        let capture_nanos = meta.timestamp_in(TimestampClock::Boottime).unwrap_or(0) as i64;
+        // When the scene was imaged: the middle of the frame's exposure (the sensor timestamp is the
+        // start of readout, after the exposure). Robot code aligns vision with odometry on it.
+        let capture_nanos = meta
+            .exposure_midpoint_in(TimestampClock::Boottime)
+            .or_else(|| meta.timestamp_in(TimestampClock::Boottime))
+            .unwrap_or(0) as i64;
         let hops = meta.hops;
         capture.sequence += 1;
         let sequence = capture.sequence;

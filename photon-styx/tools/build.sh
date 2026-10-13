@@ -35,5 +35,7 @@ export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$here/tools/zig-cc-aarch64
 export CC_aarch64_unknown_linux_gnu="$here/tools/zig-cc-aarch64.sh"
 export CXX_aarch64_unknown_linux_gnu="$here/tools/zig-c++-aarch64.sh"
 export AR_aarch64_unknown_linux_gnu=ar
-cargo_run build --release --target aarch64-unknown-linux-gnu --lib
+# Eidos's NEON and SIMD row kernels (mask, runs, downscale, sampling, refine): without them the
+# board runs Eidos's portable scalar code.
+cargo_run build --release --target aarch64-unknown-linux-gnu --lib --features neon,simd
 echo "built $target_dir/aarch64-unknown-linux-gnu/release/libphotonstyx.so"

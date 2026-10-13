@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PvLatencyBreakdown from "@/components/common/pv-latency-breakdown.vue";
 import PhotonCameraStream from "@/components/app/photon-camera-stream.vue";
 import { computed } from "vue";
 import { useCameraSettingsStore } from "@/stores/settings/CameraSettingsStore";
@@ -58,6 +59,9 @@ const fpsTooLow = computed<boolean>(() => {
               (detect {{ (useStateStore().currentPipelineResults?.detectMillis ?? 0).toFixed(2) }} ms)
             </template>
           </span>
+          <v-tooltip v-if="useStateStore().currentPipelineResults?.stages" activator="parent" location="bottom">
+            <pv-latency-breakdown :result="useStateStore().currentPipelineResults" />
+          </v-tooltip>
         </v-chip>
         <v-chip v-else label color="red" variant="text" style="font-size: 1rem; padding: 0; margin: 0">
           <span class="pr-1">Camera not connected</span>

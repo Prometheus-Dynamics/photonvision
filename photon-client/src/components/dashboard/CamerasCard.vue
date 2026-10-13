@@ -5,6 +5,7 @@ import { useStateStore } from "@/stores/StateStore";
 import { useSettingsStore } from "@/stores/settings/GeneralSettingsStore";
 import { PipelineType } from "@/types/PipelineTypes";
 import PhotonCameraStream from "@/components/app/photon-camera-stream.vue";
+import PvLatencyBreakdown from "@/components/common/pv-latency-breakdown.vue";
 
 const value = defineModel<number[]>();
 
@@ -36,6 +37,12 @@ const performanceRecommendation = computed<string>(() => {
     return `${Math.min(Math.round(useStateStore().currentPipelineResults?.latency || 0), 9999)} ms latency`;
   }
 });
+
+// Styx cameras report each stage: the time from the whole frame received to NetworkTables.
+const processingMs = computed<number | undefined>(() => {
+  const s = useStateStore().currentPipelineResults?.stages;
+  return s?.dequeued !== undefined && s.published !== undefined ? Math.max(0, s.published - s.dequeued) : undefined;
+});
 </script>
 
 <template>
@@ -50,7 +57,13 @@ const performanceRecommendation = computed<string>(() => {
         variant="text"
       >
         <span class="pr-1">{{ Math.round(useStateStore().currentPipelineResults?.fps || 0) }}&nbsp;FPS &ndash;</span
-        ><span>{{ performanceRecommendation }}</span>
+        ><span>{{ performanceRecommendation }}</span
+        ><span v-if="processingMs !== undefined" class="pl-1" style="opacity: 0.8"
+          >({{ processingMs.toFixed(1) }} ms processing)</span
+        >
+        <v-tooltip v-if="processingMs !== undefined" activator="parent" location="bottom">
+          <pv-latency-breakdown :result="useStateStore().currentPipelineResults" />
+        </v-tooltip>
       </v-chip>
       <v-chip v-else label variant="text" color="red" style="font-size: 1rem; padding: 0; margin: 0">
         <span class="pr-1"> Camera not connected </span>

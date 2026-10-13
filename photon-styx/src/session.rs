@@ -477,12 +477,18 @@ impl Session {
         capture.sequence += 1;
         let sequence = capture.sequence;
 
-        let detect_start = monotonic_ns();
+        let mut detect_start = monotonic_ns();
         // A sliced frame arrives with its lower rows still coming: detection works on what is
-        // final and finishes once the frame is complete; a frame that fails is dropped.
+        // final and finishes once the frame is complete; a frame that fails is dropped. Its
+        // detection time counts from the frame's completion (the earlier work overlapped readout).
         let detections = match capture.detector.as_mut() {
             Some(detector) => match detector.process_sliced(&lease, timeout)? {
-                Some(detections) => detections,
+                Some((detections, completed)) => {
+                    if let Some(completed) = completed {
+                        detect_start = completed;
+                    }
+                    detections
+                }
                 None => return Ok(None),
             },
             None => Detections::default(),

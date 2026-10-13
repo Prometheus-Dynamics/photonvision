@@ -33,7 +33,7 @@ serde_json = "1"
 eidos-test-fixtures = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0", default-features = false, features = ["std"] }
 
 [features]
-# Eidos's NEON / x86 row kernels (the CM5 build enables NEON through the build script).
+# Eidos's NEON / x86 row kernels; tools/build.sh enables both for the board.
 simd = ["eidos-aruco/simd", "eidos-detectors/simd"]
 neon = ["eidos-aruco/neon", "eidos-detectors/neon"]
 

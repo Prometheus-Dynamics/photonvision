@@ -16,27 +16,31 @@
  */
 package org.photonvision.styx;
 
-import com.sun.net.httpserver.HttpServer;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 
 /**
- * MJPEG stream for the Styx backend: one thread takes JPEGs from the camera session, and each HTTP
- * client of {@code /stream.mjpg} gets the latest one (multipart/x-mixed-replace), as cscore's
- * MjpegServer serves the other cameras. Same ports as the cscore streams.
- *
- * <p>Frames are only pulled from the session while a client is connected (the session encodes a
- * stream only while it is asked for, at most 30 fps). Each client is sent the newest frame it has
- * not seen; a slow client skips frames and never holds up the others or the camera.
+ * MJPEG stream for the Styx backend, on the same ports and path (/stream.mjpg) as cscore's
+ * MjpegServer. One thread takes JPEGs from the camera session; each client gets the HTTP headers
+ * at once (flushed, so a browser or curl sees the stream open) and then the latest frame as it
+ * arrives. Raw sockets, not com.sun.net.httpserver: that one does not send the headers until the
+ * first body bytes, which left clients waiting on a stream that had no frames yet.
  */
 public final class StyxMjpegServer implements AutoCloseable {
     private static final Logger logger = new Logger(StyxMjpegServer.class, LogGroup.Camera);
     private static final String BOUNDARY = "photonstyxframe";
+    private static final String HEADERS =
+            "HTTP/1.1 200 OK\r\n"
+                    + "Content-Type: multipart/x-mixed-replace; boundary=" + BOUNDARY + "\r\n"
+                    + "Cache-Control: no-cache\r\n"
+                    + "Connection: close\r\n\r\n";
 
     /** Supplies the next JPEG, waiting up to timeoutMs; an empty array means none this time. */
     @FunctionalInterface
@@ -45,104 +49,107 @@ public final class StyxMjpegServer implements AutoCloseable {
     }
 
     private final String name;
-    private final HttpServer server;
-    private final ExecutorService clients;
+    private final ServerSocket server;
     private final Object lock = new Object();
     private byte[] latest = new byte[0];
     private long sequence = 0;
     private volatile boolean running = true;
-    private final java.util.concurrent.atomic.AtomicInteger clientCount =
-            new java.util.concurrent.atomic.AtomicInteger();
+    private final Thread acceptor;
     private final Thread feeder;
 
     public StyxMjpegServer(String name, int port, JpegSource source) throws IOException {
         this.name = name;
-        this.server = HttpServer.create(new InetSocketAddress(port), 0);
-        this.clients = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, name + "-client");
-            t.setDaemon(true);
-            return t;
-        });
-        server.createContext("/stream.mjpg", exchange -> serve(exchange.getResponseBody(), exchange));
-        server.setExecutor(clients);
-        feeder = new Thread(() -> feed(source), name + "-feeder");
-        feeder.setDaemon(true);
+        this.server = new ServerSocket(port);
+        this.server.setReuseAddress(true);
+        this.acceptor = new Thread(this::accept, name + "-accept");
+        this.acceptor.setDaemon(true);
+        this.feeder = new Thread(() -> feed(source), name + "-feeder");
+        this.feeder.setDaemon(true);
     }
 
     public void start() {
         feeder.start();
-        server.start();
-        logger.info("Serving " + name + " on port " + server.getAddress().getPort());
+        acceptor.start();
+        logger.info("Serving " + name + " on port " + server.getLocalPort());
+    }
+
+    private void accept() {
+        while (running) {
+            try {
+                Socket client = server.accept();
+                Thread t = new Thread(() -> serve(client), name + "-client");
+                t.setDaemon(true);
+                t.start();
+            } catch (IOException e) {
+                if (running) logger.debug(name + ": accept failed: " + e.getMessage());
+            }
+        }
     }
 
     private void feed(JpegSource source) {
         while (running) {
+            byte[] jpeg;
             try {
-                if (clientCount.get() == 0) {
-                    synchronized (lock) {
-                        lock.wait(250);
-                    }
-                    continue;
-                }
-                byte[] jpeg = source.next(500);
-                if (jpeg != null && jpeg.length > 0) {
-                    synchronized (lock) {
-                        latest = jpeg;
-                        sequence++;
-                        lock.notifyAll();
-                    }
-                }
-            } catch (InterruptedException e) {
-                return;
+                jpeg = source.next(500);
             } catch (RuntimeException e) {
                 logger.error(name + ": frame source failed", e);
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException ie) {
-                    return;
-                }
+                jpeg = new byte[0];
+            }
+            if (jpeg == null || jpeg.length == 0) {
+                // No session or no frame yet: back off instead of spinning.
+                sleep(20);
+                continue;
+            }
+            synchronized (lock) {
+                latest = jpeg;
+                sequence++;
+                lock.notifyAll();
             }
         }
     }
 
-    private void serve(OutputStream out, com.sun.net.httpserver.HttpExchange exchange) throws IOException {
-        exchange.getResponseHeaders().add("Content-Type", "multipart/x-mixed-replace; boundary=" + BOUNDARY);
-        exchange.getResponseHeaders().add("Cache-Control", "no-cache");
-        // The UI loads the stream into an <img crossorigin="anonymous"> on another port, which the
-        // browser shows only with this header (cscore's MJPEG server sends it too).
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.sendResponseHeaders(200, 0);
-        long seen = -1;
-        clientCount.incrementAndGet();
-        synchronized (lock) {
-            lock.notifyAll();
-        }
+    private static void sleep(long millis) {
         try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void serve(Socket client) {
+        try (client) {
+            client.setSoTimeout(5000);
+            // Read and ignore the request up to its blank line.
+            BufferedReader in =
+                    new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.US_ASCII));
+            String line;
+            do {
+                line = in.readLine();
+            } while (line != null && !line.isEmpty());
+            OutputStream out = client.getOutputStream();
+            out.write(HEADERS.getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            client.setSoTimeout(0);
+            long seen = -1;
             while (running) {
                 byte[] jpeg;
                 synchronized (lock) {
                     while (running && sequence == seen) {
-                        try {
-                            lock.wait(1000);
-                        } catch (InterruptedException e) {
-                            return;
-                        }
+                        lock.wait(1000);
                     }
                     seen = sequence;
                     jpeg = latest;
                 }
-                if (jpeg.length == 0) continue;
                 out.write(("--" + BOUNDARY + "\r\nContent-Type: image/jpeg\r\nContent-Length: " + jpeg.length + "\r\n\r\n")
-                        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                        .getBytes(StandardCharsets.US_ASCII));
                 out.write(jpeg);
-                out.write("\r\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                out.write("\r\n".getBytes(StandardCharsets.US_ASCII));
                 out.flush();
             }
         } catch (IOException e) {
             // The client went away.
-        } finally {
-            clientCount.decrementAndGet();
-            exchange.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -152,7 +159,10 @@ public final class StyxMjpegServer implements AutoCloseable {
         synchronized (lock) {
             lock.notifyAll();
         }
-        server.stop(0);
-        clients.shutdownNow();
+        try {
+            server.close();
+        } catch (IOException e) {
+            // Already closed.
+        }
     }
 }

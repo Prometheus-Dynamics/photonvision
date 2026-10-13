@@ -40,6 +40,9 @@ public final class StyxMjpegServer implements AutoCloseable {
             "HTTP/1.1 200 OK\r\n"
                     + "Content-Type: multipart/x-mixed-replace; boundary=" + BOUNDARY + "\r\n"
                     + "Cache-Control: no-cache\r\n"
+                    // The UI loads streams with crossorigin="anonymous" (from port 5800),
+                    // so the browser needs CORS, as cscore's MJPEG server sends.
+                    + "Access-Control-Allow-Origin: *\r\n"
                     + "Connection: close\r\n\r\n";
 
     /** Supplies the next JPEG, waiting up to timeoutMs; an empty array means none this time. */

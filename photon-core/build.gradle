@@ -110,6 +110,18 @@ if (project.hasProperty("styxBackend") && jniPlatform == "linuxarm64") {
         commandLine "sh", "tools/build.sh"
         inputs.dir(rootProject.file("photon-styx/src"))
         inputs.file(rootProject.file("photon-styx/Cargo.toml"))
+        inputs.file(rootProject.file("photon-styx/Cargo.lock"))
+        inputs.file(rootProject.file("photon-styx/tools/build.sh"))
+        // tools/build.sh patches in a local Eidos checkout (EIDOS_PATH) in place of the Cargo.toml
+        // pin, so that checkout is an input too: a new Eidos rebuilds the library.
+        def eidosPath = System.getenv("EIDOS_PATH") ?: ""
+        inputs.property("eidosPath", eidosPath)
+        if (eidosPath) {
+            inputs.files(fileTree("${eidosPath}/crates") {
+                include "**/*.rs", "**/Cargo.toml"
+                exclude "**/target/**"
+            })
+        }
         outputs.file(rootProject.file("photon-styx/target/aarch64-unknown-linux-gnu/release/libphotonstyx.so"))
     }
     def copyPhotonStyx = tasks.register("copyPhotonStyx", Copy) {

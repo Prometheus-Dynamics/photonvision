@@ -19,10 +19,12 @@ package org.photonvision.server;
 
 import io.avaje.jsonb.javalin.JavalinJsonb;
 import io.javalin.Javalin;
+import io.javalin.http.staticfiles.Location;
 import io.javalin.plugin.bundled.CorsPlugin;
 import io.javalin.plugin.bundled.CorsPluginConfig.CorsRule;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 import org.photonvision.common.dataflow.DataChangeDestination;
 import org.photonvision.common.dataflow.DataChangeService;
@@ -61,7 +63,25 @@ public class Server {
                 Javalin.create(
                         javalinConfig -> {
                             javalinConfig.showJavalinBanner = false;
-                            javalinConfig.staticFiles.add("web");
+                            // The jar's entries all carry one fixed date (reproducible archives), and Jetty's
+                            // ETag is that date plus the size, so a new index.html of the same length looked
+                            // unchanged to the browser: it kept the old page, whose hashed assets were gone, and
+                            // the UI loaded blank. The hashed assets never change under their name; everything
+                            // else is never stored, so the browser always fetches the current index.html.
+                            javalinConfig.staticFiles.add(
+                                    files -> {
+                                        files.directory = "web";
+                                        files.location = Location.CLASSPATH;
+                                        files.headers = Map.of("Cache-Control", "public, max-age=31536000, immutable");
+                                        files.skipFileFunction = req -> !req.getRequestURI().startsWith("/assets/");
+                                    });
+                            javalinConfig.staticFiles.add(
+                                    files -> {
+                                        files.directory = "web";
+                                        files.location = Location.CLASSPATH;
+                                        files.headers = Map.of("Cache-Control", "no-store");
+                                        files.skipFileFunction = req -> req.getRequestURI().startsWith("/assets/");
+                                    });
                             javalinConfig.registerPlugin(new CorsPlugin(cors -> cors.addRule(CorsRule::anyHost)));
                             javalinConfig.requestLogger.http(
                                     (ctx, ms) -> {

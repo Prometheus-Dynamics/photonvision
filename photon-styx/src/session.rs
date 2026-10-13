@@ -285,6 +285,20 @@ pub fn boottime_ns() -> u64 {
     clock_ns(libc::CLOCK_BOOTTIME)
 }
 
+/// The capture's Styx settings. Sliced delivery: with Styx's rp1-cfe module the frame is handed
+/// over when the rows above three quarters of its height are final (the ISP has processed them
+/// while the rest is read out), so detection starts before readout ends. Without the module, or
+/// on another sensor path, frames simply arrive complete. `PHOTON_STYX_SLICES=0` turns it off.
+fn capture_config(height: u32) -> StyxConfig {
+    let config = StyxConfig::default().timestamp_clock(ClockSource::Boottime);
+    let off = std::env::var("PHOTON_STYX_SLICES").is_ok_and(|v| v == "0" || v.eq_ignore_ascii_case("off"));
+    if off || height < 64 {
+        return config;
+    }
+    let line = (height * 3 / 4) / 8 * 8;
+    config.native_slice_line(Some(line as u16)).native_deliver_slices(true)
+}
+
 /// Names of the cameras Styx sees, as `open` takes them.
 pub fn list_cameras() -> Vec<String> {
     let probe = styx::probe_all_with_errors_with_config(
@@ -314,7 +328,8 @@ impl Session {
         }
         let plan = request
             .plan_best(std::slice::from_ref(device))
-            .map_err(|e| format!("cannot plan '{}': {e}", device.identity.display))?;
+            .map_err(|e| format!("cannot plan '{}': {e}", device.identity.display))?
+            .config(capture_config(height));
         let mut frames = plan
             .start()
             .map_err(|e| format!("cannot start '{}': {e}", device.identity.display))?;
@@ -459,15 +474,26 @@ impl Session {
             .exposure_midpoint_in(TimestampClock::Boottime)
             .or_else(|| meta.timestamp_in(TimestampClock::Boottime))
             .unwrap_or(0) as i64;
-        let hops = meta.hops;
         capture.sequence += 1;
         let sequence = capture.sequence;
 
         let detect_start = monotonic_ns();
+        // A sliced frame arrives with its lower rows still coming: detection works on what is
+        // final and finishes once the frame is complete; a frame that fails is dropped.
         let detections = match capture.detector.as_mut() {
-            Some(detector) => detector.process(&lease)?,
+            Some(detector) => match detector.process_sliced(&lease, timeout)? {
+                Some(detections) => detections,
+                None => return Ok(None),
+            },
             None => Detections::default(),
         };
+        if let Some(progress) = lease.progress()
+            && progress.wait_complete(timeout) != ProgressWait::Complete
+        {
+            return Ok(None);
+        }
+        // The stage times, now that the frame is complete (the ISP's finish comes at the end).
+        let hops = lease.meta().hops;
         let board = capture.board_request.take().map(|board| detect_board(&board, &lease));
         let detect_end = monotonic_ns();
 

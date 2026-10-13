@@ -2,6 +2,7 @@
 //! pose, for one camera. Everything here runs on the frame's Styx lease; nothing is copied.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use eidos_aruco::ArucoDictionaryKind;
 use eidos_calibration::{
@@ -11,7 +12,8 @@ use eidos_calibration::{
     square_object_corners, transform_point, undistort_points,
 };
 use eidos_core::FrameLease;
-use eidos_detectors::aruco::{TrackedTagArgs, TrackedTagDetector, TrackedTagOutput};
+use styx::core::prelude::ProgressWait;
+use eidos_detectors::aruco::{TrackedTagArgs, TrackedTagDetector, TrackedTagOutput, TrackedTagSlices};
 use eidos_core::catalog::OpParams;
 use eidos_detectors::catalog::TrackedDetectorParams;
 
@@ -60,6 +62,8 @@ pub struct Detector {
     config: PipelineConfig,
     tracked: TrackedTagDetector,
     out: TrackedTagOutput,
+    /// A frame delivered in slices (rows still arriving), reused across frames.
+    slices: TrackedTagSlices,
     calibration: Option<CameraCalibration>,
     solver: Option<MultiTagPoseSolver>,
     multi_out: MultiTagPose,
@@ -131,6 +135,7 @@ impl Detector {
             config: config.clone(),
             tracked,
             out: TrackedTagOutput::default(),
+            slices: TrackedTagSlices::default(),
             calibration,
             solver,
             multi_out: MultiTagPose::default(),
@@ -144,6 +149,48 @@ impl Detector {
         self.tracked
             .apply_into(TrackedTagArgs { frame, level }, &mut self.out)
             .map_err(|e| format!("tag detection failed: {e:?}"))?;
+        self.results()
+    }
+
+    /// [`Self::process`] on a frame that may arrive in slices (Styx's sliced delivery: the
+    /// lease comes at the first slice, its rows still arriving). The detector works on the rows
+    /// already final, then on the rest once the frame completes, so little is left after the
+    /// last row; the detections are the same as on the complete frame. `Ok(None)`: the frame
+    /// failed or did not complete within `timeout`, and is dropped.
+    pub fn process_sliced(&mut self, frame: &FrameLease, timeout: Duration) -> Result<Option<Detections>, String> {
+        let Some(progress) = frame.progress() else {
+            return self.process(frame).map(Some);
+        };
+        let level = frame.pyramid_level(1).unwrap_or(frame);
+        let args = TrackedTagArgs { frame, level };
+        // The level's own rows when it is delivered in slices too; otherwise none until the
+        // frame completes.
+        let level_rows = || level.progress().map_or(0, |p| p.rows() as usize);
+        let early = self
+            .tracked
+            .begin_frame(args, &mut self.slices)
+            .and_then(|()| {
+                self.tracked
+                    .rows_ready(args, progress.rows() as usize, level_rows(), &mut self.slices)
+            });
+        if let Err(e) = early {
+            self.tracked.abandon(&mut self.slices);
+            return Err(format!("tag detection failed: {e:?}"));
+        }
+        if progress.wait_complete(timeout) != ProgressWait::Complete {
+            self.tracked.abandon(&mut self.slices);
+            return Ok(None);
+        }
+        let height = |f: &FrameLease| f.meta().format.resolution.height.get() as usize;
+        self.tracked
+            .rows_ready(args, height(frame), height(level), &mut self.slices)
+            .and_then(|()| self.tracked.finish(args, &mut self.slices, &mut self.out))
+            .map_err(|e| format!("tag detection failed: {e:?}"))?;
+        self.results().map(Some)
+    }
+
+    /// The detections of the frame just detected (`self.out`), with poses when calibrated.
+    fn results(&mut self) -> Result<Detections, String> {
 
         let kept = &self.out.validated.kept.items;
         let refined = &self.out.refined.items;

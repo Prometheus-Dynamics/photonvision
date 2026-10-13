@@ -79,4 +79,7 @@ export interface PipelineResult {
   classNames: string[];
   // Styx backend: Eidos's detection time for the frame (ms)
   detectMillis?: number;
+  // Styx backend: when each stage finished, in ms after the sensor's start of frame (dequeued,
+  // ispDone, queued, taken, detectStart, detectEnd, packed, javaReceived, published)
+  stages?: Record<string, number>;
 }

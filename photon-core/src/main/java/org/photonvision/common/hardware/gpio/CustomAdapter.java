@@ -17,6 +17,8 @@
 
 package org.photonvision.common.hardware.gpio;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.ShellExec;
@@ -31,6 +33,10 @@ public class CustomAdapter {
     protected final String setPWMCommand;
     protected final String setPWMFrequencyCommand;
     protected final String releaseGPIOCommand;
+
+    // The last command run for each pin. Status LEDs are set many times a second with the same
+    // value, and each set is a bash process; a repeat of the last command changes nothing.
+    private final Map<Integer, String> lastWrite = new ConcurrentHashMap<>();
 
     public CustomAdapter(
             String getGPIOCommand,
@@ -61,14 +67,16 @@ public class CustomAdapter {
     }
 
     public void setGPIO(int gpio, boolean state) {
-        execute(
+        write(
+                gpio,
                 setGPIOCommand
                         .replace("{p}", Integer.toString(gpio))
                         .replace("{s}", Boolean.toString(state)));
     }
 
     public void setPWM(int gpio, double value) {
-        execute(
+        write(
+                gpio,
                 setPWMCommand
                         .replace("{p}", Integer.toString(gpio))
                         .replace("{v}", Double.toString(value)));
@@ -82,6 +90,13 @@ public class CustomAdapter {
     }
 
     public void releaseGPIO(int gpio) {
+        lastWrite.remove(gpio);
         execute(releaseGPIOCommand.replace("{p}", Integer.toString(gpio)));
+    }
+
+    /** Run a pin's set command, unless it is the same command as the last one for that pin. */
+    private void write(int gpio, String command) {
+        if (command.equals(lastWrite.put(gpio, command))) return;
+        execute(command);
     }
 }

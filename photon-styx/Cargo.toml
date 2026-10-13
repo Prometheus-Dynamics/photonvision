@@ -20,17 +20,17 @@ crate-type = ["cdylib", "rlib"]
 # copy Eidos depends on only when the git reference matches. Cargo.lock pins it to 1dfc663
 # (origin/dev 1dfc663). Eidos is pinned by rev.
 styx = { git = "https://github.com/Prometheus-Dynamics/Styx.git", branch = "dev", default-features = false, features = ["native", "preview", "codec-turbojpeg"] }
-eidos-core = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0", default-features = false }
-eidos-aruco = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0", default-features = false }
-eidos-calibration = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0", default-features = false, features = ["std"] }
-eidos-detectors = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0" }
+eidos-core = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "921c3e9eaa8797de9ccb2b7de13b27ba583366be", default-features = false }
+eidos-aruco = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "921c3e9eaa8797de9ccb2b7de13b27ba583366be", default-features = false }
+eidos-calibration = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "921c3e9eaa8797de9ccb2b7de13b27ba583366be", default-features = false, features = ["std"] }
+eidos-detectors = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "921c3e9eaa8797de9ccb2b7de13b27ba583366be" }
 jni = "0.21"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
-eidos-test-fixtures = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "5131cf98f0fa5d6c811e66824562945f1678ccd0", default-features = false, features = ["std"] }
+eidos-test-fixtures = { git = "https://github.com/Prometheus-Dynamics/Eidos.git", rev = "921c3e9eaa8797de9ccb2b7de13b27ba583366be", default-features = false, features = ["std"] }
 
 [features]
 # Eidos's NEON / x86 row kernels; tools/build.sh enables both for the board.

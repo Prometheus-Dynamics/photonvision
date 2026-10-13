@@ -157,9 +157,15 @@ impl Detector {
     /// already final, then on the rest once the frame completes, so little is left after the
     /// last row; the detections are the same as on the complete frame. `Ok(None)`: the frame
     /// failed or did not complete within `timeout`, and is dropped.
-    pub fn process_sliced(&mut self, frame: &FrameLease, timeout: Duration) -> Result<Option<Detections>, String> {
+    /// The second value is when the frame completed (CLOCK_MONOTONIC ns) for a sliced frame: the
+    /// detection work after it is what the frame's latency pays; the work before overlapped readout.
+    pub fn process_sliced(
+        &mut self,
+        frame: &FrameLease,
+        timeout: Duration,
+    ) -> Result<Option<(Detections, Option<u64>)>, String> {
         let Some(progress) = frame.progress() else {
-            return self.process(frame).map(Some);
+            return self.process(frame).map(|d| Some((d, None)));
         };
         let level = frame.pyramid_level(1).unwrap_or(frame);
         let args = TrackedTagArgs { frame, level };
@@ -181,12 +187,13 @@ impl Detector {
             self.tracked.abandon(&mut self.slices);
             return Ok(None);
         }
+        let completed = crate::session::monotonic_ns();
         let height = |f: &FrameLease| f.meta().format.resolution.height.get() as usize;
         self.tracked
             .rows_ready(args, height(frame), height(level), &mut self.slices)
             .and_then(|()| self.tracked.finish(args, &mut self.slices, &mut self.out))
             .map_err(|e| format!("tag detection failed: {e:?}"))?;
-        self.results().map(Some)
+        self.results().map(|d| Some((d, Some(completed))))
     }
 
     /// The detections of the frame just detected (`self.out`), with poses when calibrated.

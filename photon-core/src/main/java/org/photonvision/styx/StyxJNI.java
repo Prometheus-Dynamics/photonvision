@@ -98,6 +98,12 @@ public final class StyxJNI {
 
     public static native void close(long handle);
 
+    /**
+     * Where the opened mode's frames sit in the sensor's full field, as {x, y, width, height}, or an
+     * empty array when the mode is the full field.
+     */
+    public static native int[] cropRect(long handle);
+
     /** Pipeline configuration as JSON (see photon-styx/src/config.rs). */
     public static native void configure(long handle, String json);
 

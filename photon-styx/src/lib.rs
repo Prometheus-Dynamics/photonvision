@@ -108,6 +108,23 @@ pub extern "system" fn Java_org_photonvision_styx_StyxJNI_open<'l>(
     })
 }
 
+/// The opened mode's window in the sensor's full field as `[x, y, width, height]`, or an empty
+/// array for a full-field mode.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_photonvision_styx_StyxJNI_cropRect<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    handle: jlong,
+) -> JIntArray<'l> {
+    guarded(&mut env, "java/lang/IllegalStateException", JIntArray::default(), |env| {
+        let crop = session(handle)?.crop();
+        let values: &[i32] = crop.as_ref().map_or(&[], |c| c.as_slice());
+        let array = env.new_int_array(values.len() as i32).map_err(|e| e.to_string())?;
+        env.set_int_array_region(&array, 0, values).map_err(|e| e.to_string())?;
+        Ok(array)
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_org_photonvision_styx_StyxJNI_close(
     mut env: JNIEnv<'_>,

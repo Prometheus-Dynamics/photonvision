@@ -20,12 +20,17 @@ import edu.wpi.first.cscore.VideoMode;
 import edu.wpi.first.util.PixelFormat;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
+import org.opencv.core.Size;
 import org.photonvision.common.configuration.CameraConfiguration;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.styx.StyxCameras;
 import org.photonvision.styx.StyxJNI;
+import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
+import org.photonvision.vision.calibration.JsonMatOfDouble;
+import org.photonvision.vision.frame.FrameStaticProperties;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource.FPSRatedVideoMode;
 import org.photonvision.vision.processes.VisionSourceSettables;
 
@@ -56,7 +61,16 @@ public class StyxSettables extends VisionSourceSettables {
         {640, 400, 60},
         {640, 400, 120},
         {640, 400, 240},
+        // The centred 1280x480 window (Styx's ov9282 module): full pixel pitch, 480 of the 800 rows,
+        // so readout is about 40% shorter. Calibrations of the full field apply, shifted by the window.
+        {1280, 480, 30},
+        {1280, 480, 60},
+        {1280, 480, 120},
+        {1280, 480, 200},
     };
+
+    /** The opened mode's window in the full field ({x, y, width, height}); empty for the full field. */
+    private int[] crop = new int[0];
 
     private FPSRatedVideoMode currentVideoMode;
     private long handle = 0;
@@ -123,6 +137,7 @@ public class StyxSettables extends VisionSourceSettables {
             }
             try {
                 handle = StyxJNI.open(styxName, mode.width, mode.height, mode.fps);
+                crop = StyxJNI.cropRect(handle);
                 logger.info(
                         "Opened Styx camera "
                                 + getConfiguration().nickname
@@ -151,6 +166,50 @@ public class StyxSettables extends VisionSourceSettables {
     @Override
     public HashMap<Integer, VideoMode> getAllVideoModes() {
         return videoModes;
+    }
+
+    /**
+     * A windowed mode (e.g. 1280x480) without a calibration of its own uses the full field's: the
+     * same lens, so the same focal lengths and distortion, with the principal point moved by the
+     * window's offset (cx - x, cy - y).
+     */
+    @Override
+    protected void calculateFrameStaticProps() {
+        super.calculateFrameStaticProps();
+        var mode = getCurrentVideoMode();
+        if (frameStaticProperties.cameraCalibration != null || crop.length != 4 || mode == null) {
+            return;
+        }
+        int x = crop[0], y = crop[1];
+        var full =
+                getConfiguration().calibrations.stream()
+                        .filter(
+                                c ->
+                                        c.unrotatedImageSize.width >= x + mode.width
+                                                && c.unrotatedImageSize.height >= y + mode.height
+                                                && (c.unrotatedImageSize.width > mode.width
+                                                        || c.unrotatedImageSize.height > mode.height))
+                        .findFirst()
+                        .orElse(null);
+        if (full == null) return;
+        double[] k = full.cameraIntrinsics.data.clone(); // row-major 3x3
+        k[2] -= x;
+        k[5] -= y;
+        var windowed =
+                new CameraCalibrationCoefficients(
+                        new Size(mode.width, mode.height),
+                        new JsonMatOfDouble(
+                                full.cameraIntrinsics.rows,
+                                full.cameraIntrinsics.cols,
+                                full.cameraIntrinsics.type,
+                                k),
+                        full.distCoeffs,
+                        full.calobjectWarp,
+                        List.of(),
+                        full.calobjectSize,
+                        full.calobjectSpacing,
+                        full.lensmodel);
+        frameStaticProperties = new FrameStaticProperties(mode, getFOV(), windowed);
     }
 
     @Override

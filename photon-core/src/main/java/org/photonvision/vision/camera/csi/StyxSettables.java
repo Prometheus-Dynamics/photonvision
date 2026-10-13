@@ -23,6 +23,7 @@ import org.photonvision.common.configuration.CameraConfiguration;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
 import org.photonvision.common.util.math.MathUtils;
+import org.photonvision.styx.StyxCameras;
 import org.photonvision.styx.StyxJNI;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource.FPSRatedVideoMode;
 import org.photonvision.vision.processes.VisionSourceSettables;
@@ -104,13 +105,16 @@ public class StyxSettables extends VisionSourceSettables {
         var mode = (FPSRatedVideoMode) videoMode;
         synchronized (CAMERA_LOCK) {
             close();
+            String styxName = StyxCameras.resolve(getConfiguration().matchedCameraInfo.path());
+            if (styxName == null) {
+                logger.error(
+                        "No Styx camera matches " + getConfiguration().matchedCameraInfo.path());
+                handle = 0;
+                currentVideoMode = mode;
+                return;
+            }
             try {
-                handle =
-                        StyxJNI.open(
-                                getConfiguration().matchedCameraInfo.path(),
-                                mode.width,
-                                mode.height,
-                                mode.fps);
+                handle = StyxJNI.open(styxName, mode.width, mode.height, mode.fps);
                 logger.info(
                         "Opened Styx camera "
                                 + getConfiguration().nickname

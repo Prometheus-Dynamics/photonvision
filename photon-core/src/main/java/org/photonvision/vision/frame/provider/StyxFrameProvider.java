@@ -18,6 +18,7 @@ package org.photonvision.vision.frame.provider;
 
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
+import org.photonvision.styx.StyxCameras;
 import org.photonvision.styx.StyxJNI;
 import org.photonvision.styx.StyxResult;
 import org.photonvision.vision.camera.csi.StyxSettables;
@@ -40,6 +41,8 @@ public class StyxFrameProvider extends FrameProvider {
 
     private final StyxSettables settables;
     private int badFrameCounter = 0;
+    private long lastOpenAttempt = Long.MIN_VALUE / 2;
+    private static final long OPEN_RETRY_NANOS = 2_000_000_000L;
 
     public StyxFrameProvider(StyxSettables settables) {
         this.settables = settables;
@@ -54,7 +57,24 @@ public class StyxFrameProvider extends FrameProvider {
     public Frame get() {
         long handle = settables.handle();
         if (handle == 0) {
-            return new Frame();
+            // No session yet: open it (the settables do not, since their properties count as cached),
+            // retrying at most every two seconds.
+            long now = System.nanoTime();
+            if (now - lastOpenAttempt > OPEN_RETRY_NANOS) {
+                lastOpenAttempt = now;
+                if (checkCameraConnected()) {
+                    settables.setVideoMode(settables.getCurrentVideoMode());
+                }
+            }
+            if (settables.handle() == 0) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return new Frame();
+            }
+            handle = settables.handle();
         }
         byte[] bytes;
         synchronized (settables.CAMERA_LOCK) {
@@ -114,14 +134,8 @@ public class StyxFrameProvider extends FrameProvider {
 
     @Override
     protected boolean checkCameraConnected() {
-        try {
-            for (String name : StyxJNI.listCameras()) {
-                if (name.equals(settables.getConfiguration().getDevicePath())) return true;
-            }
-        } catch (RuntimeException | UnsatisfiedLinkError e) {
-            // The native library is not loaded or the probe failed: not connected.
-        }
-        return false;
+        // A config from a libcamera image keeps libcamera's path; StyxCameras finds the same sensor.
+        return StyxCameras.resolve(settables.getConfiguration().matchedCameraInfo.path()) != null;
     }
 
     @Override

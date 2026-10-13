@@ -138,9 +138,11 @@ impl Detector {
         })
     }
 
-    /// Detect every tag in `frame` (its half-size pyramid level when it has one).
+    /// Detect every tag in `frame`, searched at full resolution: small tags (about 20 px) are
+    /// only about 10 px on the half-size level, too small to threshold and decode reliably
+    /// (missed tags, ~2 px corner error). Eidos's adaptive level choice will replace this.
     pub fn process(&mut self, frame: &FrameLease) -> Result<Detections, String> {
-        let level = frame.pyramid_level(1).unwrap_or(frame);
+        let level = frame;
         self.tracked
             .apply_into(TrackedTagArgs { frame, level }, &mut self.out)
             .map_err(|e| format!("tag detection failed: {e:?}"))?;

@@ -91,6 +91,36 @@ public class VisionSourceManager implements AutoCloseable {
 
     public void registerTimedTasks() {
         TimedTaskManager.getInstance().addTask("CameraDeviceExplorer", this::pushUiUpdate, 1000);
+        if (AUTO_ACTIVATE_BUILTIN_CAMERA) {
+            TimedTaskManager.getInstance()
+                    .addTask("BuiltinCameraActivator", this::activateBuiltinCamera, 1000);
+        }
+    }
+
+    /**
+     * On a device whose camera is part of the board (PHOTONVISION_AUTO_ACTIVATE_CSI=1, set by the
+     * image), a fresh install has no camera configs, so the built-in CSI camera would sit unassigned
+     * until someone activates it in the UI. Activate it once, and only when there are no camera
+     * configs at all: a camera the user deactivated or reassigned stays as they left it.
+     */
+    private static final boolean AUTO_ACTIVATE_BUILTIN_CAMERA =
+            "1".equals(System.getenv("PHOTONVISION_AUTO_ACTIVATE_CSI"));
+
+    private boolean builtinCameraChecked = false;
+
+    protected synchronized void activateBuiltinCamera() {
+        if (builtinCameraChecked) return;
+        if (!vmm.getModules().isEmpty() || !disabledCameraConfigs.isEmpty()) {
+            builtinCameraChecked = true;
+            return;
+        }
+        for (PVCameraInfo info : filterAllowedDevices(getConnectedCameras())) {
+            if (info.type() == CameraType.ZeroCopyPicam) {
+                logger.info("Activating the built-in camera " + info.name());
+                builtinCameraChecked = assignUnmatchedCamera(info);
+                return;
+            }
+        }
     }
 
     /**

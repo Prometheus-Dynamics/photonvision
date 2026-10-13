@@ -257,6 +257,9 @@ struct Capture {
 
 pub struct Session {
     capture: Mutex<Capture>,
+    /// Where the opened mode's frames sit in the sensor's full field (`x, y, width, height`),
+    /// when the mode is a window of it (e.g. 1280x480 inside 1280x800); read from the first frame.
+    crop: Option<[i32; 4]>,
     controls: StandardControls,
     gains: Mutex<(f32, f32)>,
     preview: Mutex<Option<Preview>>,
@@ -312,9 +315,18 @@ impl Session {
         let plan = request
             .plan_best(std::slice::from_ref(device))
             .map_err(|e| format!("cannot plan '{}': {e}", device.identity.display))?;
-        let frames = plan
+        let mut frames = plan
             .start()
             .map_err(|e| format!("cannot start '{}': {e}", device.identity.display))?;
+        // A windowed mode reports its place in the full field on every frame; take it from the
+        // first one so the caller can place a full-field calibration before detection starts.
+        let crop = match frames.next_frame(Duration::from_millis(2000)) {
+            RecvOutcome::Data(lease) => lease
+                .meta()
+                .crop
+                .map(|c| [c.x as i32, c.y as i32, c.width as i32, c.height as i32]),
+            _ => None,
+        };
         let controls = frames.standard_controls();
         let preview = Preview::new(
             PreviewConfig::new()
@@ -333,6 +345,7 @@ impl Session {
                 .map_err(|e| format!("cannot start the processed stream: {e}"))?
         };
         Ok(Self {
+            crop,
             capture: Mutex::new(Capture {
                 frames: Some(frames),
                 detector: None,
@@ -350,6 +363,12 @@ impl Session {
             processed,
             processed_thread: Mutex::new(Some(thread)),
         })
+    }
+
+    /// The opened mode's window in the sensor's full field (`x, y, width, height`), or `None` for
+    /// a full-field mode.
+    pub fn crop(&self) -> Option<[i32; 4]> {
+        self.crop
     }
 
     /// Stop the capture, then the streams (their subscribers end).

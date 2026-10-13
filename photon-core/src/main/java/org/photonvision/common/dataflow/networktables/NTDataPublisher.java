@@ -32,12 +32,24 @@ import org.photonvision.vision.pipeline.result.CalibrationPipelineResult;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.vision.target.TrackedTarget;
 import org.wpilib.math.geometry.Transform3d;
+import org.photonvision.styx.StyxJNI;
+import org.photonvision.styx.StyxResult;
+import org.wpilib.networktables.DoubleArrayPublisher;
 import org.wpilib.networktables.NetworkTable;
 import org.wpilib.networktables.NetworkTableEvent;
 import org.wpilib.networktables.NetworkTablesJNI;
 
 public class NTDataPublisher implements CVPipelineResultConsumer {
     private final Logger logger = new Logger(NTDataPublisher.class, LogGroup.General);
+
+    /**
+     * Styx cameras: where each frame's latency goes, ms, as {@code latencyStages} = [exposure/2,
+     * readout to first delivery, ISP, queue, detection, PhotonVision + NT, start of frame to NT,
+     * total (capture to NT)], so tools like Atlas can show the breakdown without the UI socket.
+     */
+    private DoubleArrayPublisher latencyStagesPublisher;
+
+    private NetworkTable latencyStagesTable;
 
     private final NetworkTable rootTable = NetworkTablesManager.getInstance().kRootTable;
 
@@ -227,6 +239,7 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
         ts.fpsLimitPublisher.set(fpsLimitSupplier.get());
         ts.enabledPublisher.set(enabledSupplier.getAsBoolean());
         ts.latencyMillisEntry.set(acceptedResult.getLatencyMillis());
+        if (result.styxResult != null) publishLatencyStages(result.styxResult);
         ts.fpsEntry.set(acceptedResult.fps);
         ts.hasTargetEntry.set(acceptedResult.hasTargets());
 
@@ -285,5 +298,32 @@ public class NTDataPublisher implements CVPipelineResultConsumer {
 
         // TODO...nt4... is this needed?
         rootTable.getInstance().flush();
+    }
+
+    private void publishLatencyStages(StyxResult styx) {
+        long[] st = styx.stages();
+        long sof = st[StyxResult.STAGE_SENSOR];
+        if (sof == 0 || st.length <= StyxResult.STAGE_PUBLISHED) return;
+        if (latencyStagesTable != ts.subTable) {
+            if (latencyStagesPublisher != null) latencyStagesPublisher.close();
+            latencyStagesTable = ts.subTable;
+            latencyStagesPublisher = ts.subTable.getDoubleArrayTopic("latencyStages").publish();
+        }
+        long published = StyxJNI.nowBoottimeNanos();
+        long deq = st[StyxResult.STAGE_DEQUEUED];
+        long isp = Math.max(st[StyxResult.STAGE_ISP_DONE], deq);
+        long detectStart = Math.max(st[StyxResult.STAGE_DETECT_START], isp);
+        long detectEnd = Math.max(st[StyxResult.STAGE_DETECT_END], detectStart);
+        latencyStagesPublisher.set(
+                new double[] {
+                    Math.max(0, sof - styx.captureNanos()) / 1e6,
+                    (deq - sof) / 1e6,
+                    (isp - deq) / 1e6,
+                    (detectStart - isp) / 1e6,
+                    (detectEnd - detectStart) / 1e6,
+                    (published - detectEnd) / 1e6,
+                    (published - sof) / 1e6,
+                    (published - styx.captureNanos()) / 1e6
+                });
     }
 }

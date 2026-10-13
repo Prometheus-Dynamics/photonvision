@@ -38,7 +38,7 @@ public class StyxSettables extends VisionSourceSettables {
     /**
      * The Raze OV9782 modes (grey, the sensor's 3A-processed luma), opened at exactly this rate: the
      * sensor's three native modes (Styx's ov9782.toml: the full array, its top 720 lines, and the
-     * array subsampled 2x2), up to about 145, 173 and 311 fps. The Raze image drives the sensor
+     * array subsampled 2x2), up to 120.6, 144.2 and 259.8 fps (exact rates). The Raze image drives the sensor
      * through Styx's sensor bridge, which sets the sensor's timing itself; exact rates and 640x400
      * were only unreliable on the kernel-driven sensor (ov9282 driver), which the image no longer
      * binds.
@@ -50,6 +50,7 @@ public class StyxSettables extends VisionSourceSettables {
         {1280, 720, 30},
         {1280, 720, 60},
         {1280, 720, 120},
+        {1280, 720, 144},
         {640, 400, 30},
         {640, 400, 60},
         {640, 400, 120},

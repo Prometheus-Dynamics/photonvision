@@ -16,9 +16,9 @@
  */
 package org.photonvision.vision.frame.provider;
 
-import edu.wpi.first.networktables.NetworkTablesJNI;
 import org.photonvision.common.logging.LogGroup;
 import org.photonvision.common.logging.Logger;
+import org.photonvision.common.util.math.MathUtils;
 import org.photonvision.styx.StyxCameras;
 import org.photonvision.styx.StyxJNI;
 import org.photonvision.styx.StyxResult;
@@ -76,6 +76,8 @@ public class StyxFrameProvider extends FrameProvider {
             }
             handle = settables.handle();
         }
+        // The camera is there and streaming: what the UI's "connected" (and its camera controls) read.
+        cameraPropertiesCached = true;
         byte[] bytes;
         synchronized (settables.CAMERA_LOCK) {
             if (settables.handle() != handle) return new Frame();
@@ -94,9 +96,11 @@ public class StyxFrameProvider extends FrameProvider {
         StyxResult result = StyxResult.decode(bytes);
         result.stages()[StyxResult.STAGE_JAVA_RECEIVED] = received;
         ++sequenceID;
-        // Styx stamps the start of the frame on the boottime clock; PhotonVision's timestamps are on
-        // the NetworkTables clock, so the latency is subtracted from now.
-        long now = NetworkTablesJNI.now();
+        // Styx stamps the start of the frame on the boottime clock; PhotonVision's frame timestamps are
+        // on WPILib's clock in nanoseconds (MathUtils.wpiNanoTime, as the libcamera provider uses), so
+        // the latency is subtracted from that. NetworkTablesJNI.now() is in microseconds: subtracting
+        // nanoseconds from it gave every frame a timestamp seconds in the past.
+        long now = MathUtils.wpiNanoTime();
         long timestamp =
                 result.captureNanos() > 0
                         ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())

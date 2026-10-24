@@ -117,8 +117,10 @@ public class StyxSettables extends VisionSourceSettables {
 
     /**
      * Turn the picture. A flip is set when the session opens, so a change that alters the flips
-     * reopens the camera (under CAMERA_LOCK, as a video mode change does). The picture's size and
-     * its calibration are unchanged: a calibration is taken in the orientation it is used in.
+     * reopens the camera (under CAMERA_LOCK, as a video mode change does). The picture's size is
+     * unchanged; its calibration is not: PhotonVision calibrates at 0 degrees and stores the
+     * calibration unrotated, so frames carry it turned by {@link #appliedRotation()}, as the
+     * libcamera provider does.
      */
     public void setRotation(ImageRotationMode mode) {
         if (mode == rotation) return;
@@ -138,6 +140,11 @@ public class StyxSettables extends VisionSourceSettables {
 
     public ImageRotationMode getRotation() {
         return rotation;
+    }
+
+    /** The rotation the sensor applies: 180 degrees when flipped, else none (90 and 270 aren't). */
+    public ImageRotationMode appliedRotation() {
+        return isFlipped() ? ImageRotationMode.DEG_180_CCW : ImageRotationMode.DEG_0;
     }
 
     /** Whether the sensor is turned 180 degrees (both flips). */

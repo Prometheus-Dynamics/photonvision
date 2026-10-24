@@ -106,8 +106,14 @@ public class StyxFrameProvider extends FrameProvider {
                 result.captureNanos() > 0
                         ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())
                         : now;
+        // The calibration turned with the picture (PhotonVision stores it unrotated): Eidos's poses
+        // and the target yaw and pitch use it.
         return new StyxFrame(
-                sequenceID, handle, result, timestamp, settables.getFrameStaticProperties());
+                sequenceID,
+                handle,
+                result,
+                timestamp,
+                settables.getFrameStaticProperties().rotate(settables.appliedRotation()));
     }
 
     @Override

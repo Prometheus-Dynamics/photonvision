@@ -76,6 +76,8 @@ public class StyxFrameProvider extends FrameProvider {
             }
             handle = settables.handle();
         }
+        // The camera is there and streaming: what the UI's "connected" (and its camera controls) read.
+        cameraPropertiesCached = true;
         byte[] bytes;
         synchronized (settables.CAMERA_LOCK) {
             if (settables.handle() != handle) return new Frame();
@@ -97,9 +99,10 @@ public class StyxFrameProvider extends FrameProvider {
         // Styx stamps the start of the frame on the boottime clock; PhotonVision's timestamps are on
         // the NetworkTables clock, so the latency is subtracted from now.
         long now = NetworkTablesJNI.now();
-        long timestamp = result.captureNanos() > 0
-                ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())
-                : now;
+        long timestamp =
+                result.captureNanos() > 0
+                        ? now - Math.max(0, StyxJNI.nowBoottimeNanos() - result.captureNanos())
+                        : now;
         return new StyxFrame(
                 sequenceID,
                 handle,

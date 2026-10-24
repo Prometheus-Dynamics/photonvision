@@ -117,15 +117,37 @@ public final class StyxTargetMath {
                 0f,
                 best,
                 alt,
-                withPose && StyxResult.hasPose(t.best()) ? t.ambiguity() : -1,
+                withPose && StyxResult.hasPose(t.best()) ? ambiguity(t.ambiguity(), best, alt) : -1,
                 corners,
                 new ArrayList<>(corners));
+    }
+
+    /** Translation (m) and angle (rad) within which a tag's two pose solutions are the same pose. */
+    private static final double SAME_POSE_M = 0.01;
+
+    private static final double SAME_POSE_RAD = Math.toRadians(1.0);
+
+    /**
+     * A tag's pose ambiguity for PhotonVision: Eidos's best/alternative error ratio, except 0 when the
+     * two solutions are the same pose. Seen dead-on, both of a tag's solutions converge to one pose
+     * and their errors are equal, so the ratio reads about 1 although nothing is ambiguous (robot
+     * code dropping ambiguity above 0.2 then dropped exactly the clean head-on tags).
+     */
+    static double ambiguity(double ratio, Transform3d best, Transform3d alt) {
+        if (alt == null || alt.equals(new Transform3d())) return 0.0;
+        Transform3d between = best.inverse().plus(alt);
+        boolean same =
+                between.getTranslation().getNorm() < SAME_POSE_M
+                        && Math.abs(between.getRotation().getAngle()) < SAME_POSE_RAD;
+        return same ? 0.0 : ratio;
     }
 
     /** Multi-tag result: the camera pose in the field frame and the tags that made it. */
     public static MultiTargetPNPResult toMultiTarget(StyxResult r) {
         Transform3d pose = fieldPose(r.multiPose());
-        PnpResult pnp = new PnpResult(pose, pose, r.multiAmbiguity(), r.multiRmsPx(), r.multiRmsPx());
+        // One solution, as PhotonVision's multi-tag solve (SQPnP) gives: its ambiguity is 0, so robot
+        // code filtering on ambiguity treats both backends alike.
+        PnpResult pnp = new PnpResult(pose, pose, 0.0, r.multiRmsPx(), r.multiRmsPx());
         List<Short> used = new ArrayList<>();
         for (Target t : r.targets()) {
             if (t.usedInMulti()) used.add((short) t.id());

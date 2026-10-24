@@ -33,7 +33,8 @@ import org.photonvision.vision.pipe.impl.HSVPipe.HSVParams;
 /**
  * Frames from a Styx camera. Each {@link #get()} waits for the next camera frame and runs the
  * detector configured on the session; the result rides in a {@link StyxFrame}. No pixels cross into
- * Java, so the threshold, rotation, HSV and copy requests have nothing to do here.
+ * Java, so the threshold, HSV and copy requests have nothing to do here. Rotation is applied on the
+ * sensor, so the streams, detections and calibration all see the turned picture.
  */
 public class StyxFrameProvider extends FrameProvider {
     static final Logger logger = new Logger(StyxFrameProvider.class, LogGroup.Camera);
@@ -116,7 +117,8 @@ public class StyxFrameProvider extends FrameProvider {
 
     @Override
     public void requestFrameRotation(ImageRotationMode rotationMode) {
-        // Rotation is not applied on this path yet.
+        // 0 and 180 degrees flip the sensor (a reopen on change); see StyxSettables.setRotation.
+        settables.setRotation(rotationMode);
     }
 
     @Override

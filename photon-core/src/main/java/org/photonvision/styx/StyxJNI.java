@@ -93,8 +93,13 @@ public final class StyxJNI {
     /** Camera names Styx finds (the names {@link #open} takes). */
     public static native String[] listCameras();
 
-    /** Open a camera at exactly width x height and fps. Returns a handle. */
-    public static native long open(String camera, int width, int height, int fps);
+    /**
+     * Open a camera at exactly width x height and fps, with the sensor flipped left-right
+     * (hflip) and/or upside down (vflip); both is a 180 degree turn. The flips are set at open:
+     * changing them means reopening. Returns a handle.
+     */
+    public static native long open(
+            String camera, int width, int height, int fps, boolean hflip, boolean vflip);
 
     public static native void close(long handle);
 

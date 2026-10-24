@@ -289,8 +289,13 @@ pub fn boottime_ns() -> u64 {
 /// over when the rows above three quarters of its height are final (the ISP has processed them
 /// while the rest is read out), so detection starts before readout ends. Without the module, or
 /// on another sensor path, frames simply arrive complete. `PHOTON_STYX_SLICES=0` turns it off.
-fn capture_config(height: u32) -> StyxConfig {
-    let config = StyxConfig::default().timestamp_clock(ClockSource::Boottime);
+///
+/// `hflip` and `vflip` flip the sensor's readout (both is a 180 degree turn, PhotonVision's
+/// 180 degree rotation). They are set at open only, so the caller reopens to change them.
+fn capture_config(height: u32, hflip: bool, vflip: bool) -> StyxConfig {
+    let config = StyxConfig::default()
+        .timestamp_clock(ClockSource::Boottime)
+        .native_flips(hflip, vflip);
     let off = std::env::var("PHOTON_STYX_SLICES").is_ok_and(|v| v == "0" || v.eq_ignore_ascii_case("off"));
     if off || height < 64 {
         return config;
@@ -310,8 +315,10 @@ pub fn list_cameras() -> Vec<String> {
 impl Session {
     /// Open `camera` (a name from [`list_cameras`]; empty takes the first) at exactly `width` x
     /// `height`, at `fps` (0: the sensor's natural rate), as grey frames with the ISP's half-size
-    /// pyramid level. Detection reads level 1; refinement reads the full frame.
-    pub fn open(camera: &str, width: u32, height: u32, fps: u32) -> Result<Self, String> {
+    /// pyramid level. Detection reads level 1; refinement reads the full frame. `hflip` and
+    /// `vflip` flip the sensor (see [`capture_config`]); a flipped picture is what the streams,
+    /// the detector and the calibration all see.
+    pub fn open(camera: &str, width: u32, height: u32, fps: u32, hflip: bool, vflip: bool) -> Result<Self, String> {
         let probe = styx::probe_all_with_errors_with_config(
             &StyxConfig::default().timestamp_clock(ClockSource::Boottime),
         );
@@ -329,7 +336,7 @@ impl Session {
         let plan = request
             .plan_best(std::slice::from_ref(device))
             .map_err(|e| format!("cannot plan '{}': {e}", device.identity.display))?
-            .config(capture_config(height));
+            .config(capture_config(height, hflip, vflip));
         let mut frames = plan
             .start()
             .map_err(|e| format!("cannot start '{}': {e}", device.identity.display))?;
@@ -585,5 +592,20 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::capture_config;
+
+    #[test]
+    fn flips_reach_the_sensor_config() {
+        let turned = capture_config(480, true, true);
+        assert!(turned.backends.native.hflip && turned.backends.native.vflip);
+        let plain = capture_config(480, false, false);
+        assert!(!plain.backends.native.hflip && !plain.backends.native.vflip);
+        let mirrored = capture_config(480, true, false);
+        assert!(mirrored.backends.native.hflip && !mirrored.backends.native.vflip);
     }
 }

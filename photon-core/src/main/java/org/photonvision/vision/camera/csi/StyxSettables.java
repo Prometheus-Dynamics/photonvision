@@ -32,6 +32,7 @@ import org.photonvision.vision.calibration.CameraCalibrationCoefficients;
 import org.photonvision.vision.calibration.JsonMatOfDouble;
 import org.photonvision.vision.frame.FrameStaticProperties;
 import org.photonvision.vision.camera.csi.LibcameraGpuSource.FPSRatedVideoMode;
+import org.photonvision.vision.opencv.ImageRotationMode;
 import org.photonvision.vision.processes.VisionSourceSettables;
 
 /**
@@ -73,6 +74,13 @@ public class StyxSettables extends VisionSourceSettables {
     private int[] crop = new int[0];
 
     private FPSRatedVideoMode currentVideoMode;
+    /**
+     * The picture's rotation. Styx turns the picture on the sensor: 180 degrees is both flips, 0 is
+     * none. 90 and 270 degrees are not supported on this backend and leave the picture unturned, as
+     * the libcamera path does.
+     */
+    private ImageRotationMode rotation = ImageRotationMode.DEG_0;
+
     private long handle = 0;
     private double lastExposureUs = 20000;
     private boolean lastAutoExposure = false;
@@ -107,6 +115,36 @@ public class StyxSettables extends VisionSourceSettables {
         }
     }
 
+    /**
+     * Turn the picture. A flip is set when the session opens, so a change that alters the flips
+     * reopens the camera (under CAMERA_LOCK, as a video mode change does). The picture's size and
+     * its calibration are unchanged: a calibration is taken in the orientation it is used in.
+     */
+    public void setRotation(ImageRotationMode mode) {
+        if (mode == rotation) return;
+        boolean wasFlipped = isFlipped();
+        rotation = mode;
+        if (mode == ImageRotationMode.DEG_90_CCW || mode == ImageRotationMode.DEG_270_CCW) {
+            logger.warn(
+                    "Styx cameras support 0 and 180 degree rotation; "
+                            + mode
+                            + " is not applied on "
+                            + getConfiguration().nickname);
+        }
+        if (isFlipped() != wasFlipped) {
+            setVideoModeInternal(getCurrentVideoMode());
+        }
+    }
+
+    public ImageRotationMode getRotation() {
+        return rotation;
+    }
+
+    /** Whether the sensor is turned 180 degrees (both flips). */
+    private boolean isFlipped() {
+        return rotation == ImageRotationMode.DEG_180_CCW;
+    }
+
     /** Close the session (the camera is released). */
     public void close() {
         synchronized (CAMERA_LOCK) {
@@ -136,7 +174,14 @@ public class StyxSettables extends VisionSourceSettables {
                 return;
             }
             try {
-                handle = StyxJNI.open(styxName, mode.width, mode.height, mode.fps);
+                handle =
+                        StyxJNI.open(
+                                styxName,
+                                mode.width,
+                                mode.height,
+                                mode.fps,
+                                isFlipped(),
+                                isFlipped());
                 crop = StyxJNI.cropRect(handle);
                 logger.info(
                         "Opened Styx camera "

@@ -118,6 +118,7 @@ fn multi_tag_pose_recovers_the_camera_in_the_field_frame() {
                 id: *id,
                 side,
                 reference_from_tag: eidos_reference_from_tag(*pose),
+                placement: None,
             })
             .collect(),
     );

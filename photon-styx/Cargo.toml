@@ -3,7 +3,7 @@
 # workspace: the PhotonVision Gradle build compiles it through `photon-styx/build.sh`.
 [package]
 name = "photon-styx"
-version = "0.1.0"
+version = "0.1.1-dev"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "PhotonVision's Styx + Eidos JNI backend (libphotonstyx.so)"

@@ -31,6 +31,26 @@ ext.allOutputsFolder = file("$project.buildDir/outputs")
 // Configure the version number.
 apply from: "versioningHelper.gradle"
 
+// PhotonVersion is <year>.<major>.<minor>-dev.<count>+<commit> (HeliOS's scheme): count is
+// `git rev-list --count HEAD` and the commit its 8-character short sha. A commit that is exactly a
+// release tag (v2026.3.4) is that release, without -dev. -PversionString still overrides this.
+def photonGit = { List<String> args -> providers.exec { commandLine(['git'] + args) }.standardOutput.asText.get().trim() }
+def photonVersionFromGit = {
+    try {
+        String exact = ""
+        try { exact = photonGit(['describe', '--tags', '--match=v*', '--exact-match', 'HEAD']) } catch (Exception ignored) { }
+        if (exact) return exact.substring(1)
+        def m = (photonGit(['describe', '--tags', '--match=v*', '--abbrev=0']) =~ /v(\d+\.\d+\.\d+)/)
+        if (!m.find()) return null
+        return m.group(1) + "-dev." + photonGit(['rev-list', '--count', 'HEAD']) + "+" + photonGit(['rev-parse', '--short=8', 'HEAD'])
+    } catch (Exception ignored) {
+        return null
+    }
+}
+if (!project.hasProperty("versionString") && photonVersionFromGit() != null) {
+    ext.versionString = photonVersionFromGit()
+}
+
 ext {
     wpilibVersion = "2026.2.1"
     wpimathVersion = wpilibVersion
@@ -44,7 +64,7 @@ ext {
     mrcalVersion = "v2026.0.0";
 
     pubVersion = versionString
-    isDev = pubVersion.startsWith("dev")
+    isDev = pubVersion.startsWith("dev") || pubVersion.contains("-dev.")
 
     wpilibNativeName = wpilibTools.platformMapper.currentPlatform.platformName;
     jniPlatform = wpilibTools.platformMapper.wpilibClassifier;

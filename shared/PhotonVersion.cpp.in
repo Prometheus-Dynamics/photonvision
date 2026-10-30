@@ -22,13 +22,11 @@
  * regenerated any time the publish task is run, or when this file is deleted.
  */
 
-static const char* dev_ = "dev";
-
 namespace photon {
   namespace PhotonVersion {
     const char* versionString = "${version}";
     const char* buildDate = "${date}";
-    const bool isRelease = strncmp(dev_, versionString, strlen(dev_)) != 0;
+    const bool isRelease = strncmp(versionString, "dev", 3) != 0 && strstr(versionString, "-dev.") == nullptr;
 
     // Versions of dependant libraries
     const char* wpilibTargetVersion = "${wpilibVersion}";

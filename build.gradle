@@ -45,8 +45,11 @@ def photonVersionFromGit = {
         return null
     }
 }
-if (!project.hasProperty("versionString") && photonVersionFromGit() != null) {
-    ext.versionString = photonVersionFromGit()
+// The versioning helper has already given every project a versionString, so this replaces it on
+// all of them; only a -PversionString on the command line is kept.
+def photonVersion = gradle.startParameter.projectProperties.containsKey("versionString") ? null : photonVersionFromGit()
+if (photonVersion != null) {
+    allprojects { ext.versionString = photonVersion }
 }
 
 ext {

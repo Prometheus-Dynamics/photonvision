@@ -121,6 +121,7 @@ impl Detector {
                     reference_from_tag: eidos_reference_from_tag(se3_from_wpilib(
                         tag.x, tag.y, tag.z, tag.qw, tag.qx, tag.qy, tag.qz,
                     )),
+                    placement: None,
                 })
                 .collect();
             Some(MultiTagPoseSolver::new(
